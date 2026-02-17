@@ -10,6 +10,7 @@
 #include <crypto/common.h>
 #include <crypto/ripemd160.h>
 #include <crypto/sha256.h>
+#include <crypto/scrypt.h>
 #include <prevector.h>
 #include <serialize.h>
 #include <span.h>
@@ -139,6 +140,44 @@ public:
 
     template <typename T>
     HashWriter& operator<<(const T& obj)
+    {
+        ::Serialize(*this, obj);
+        return *this;
+    }
+};
+
+class ScryptHashWriter
+{
+private:
+    std::vector<unsigned char> vchData;
+
+public:
+    void write(Span<const std::byte> src)
+    {
+        vchData.insert(vchData.end(), UCharCast(src.data()), UCharCast(src.data() + src.size()));
+    }
+
+    Span<unsigned char> Data()
+    {
+        return {vchData.data(), vchData.size()};
+    }
+
+    uint256 GetScryptHash() const
+    {
+        uint256 thash;
+        if (vchData.empty()) {
+            return uint256(); // Or throw an error for empty input
+        }
+        assert(vchData.size() == 80);
+
+        // Pass the full buffered data to the scrypt function
+        scrypt_32k_1_1_256(reinterpret_cast<const char*>(vchData.data()), reinterpret_cast<char*>(thash.begin()));
+
+        return thash;
+    }
+
+    template <typename T>
+    ScryptHashWriter& operator<<(const T& obj)
     {
         ::Serialize(*this, obj);
         return *this;

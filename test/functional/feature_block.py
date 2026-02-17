@@ -150,7 +150,8 @@ class FullBlockTest(BitcoinTestFramework):
 
         # Submit blocks for rejection, each of which contains a single transaction
         # (aside from coinbase) which should be considered invalid.
-        for TxTemplate in invalid_txs.iter_all_templates():
+        for idx, TxTemplate in enumerate(invalid_txs.iter_all_templates()):
+        # for TxTemplate in invalid_txs.iter_all_templates():
             template = TxTemplate(spend_tx=attempt_spend_tx)
 
             if template.valid_in_block:
@@ -164,6 +165,7 @@ class FullBlockTest(BitcoinTestFramework):
                 self.sign_tx(badtx, attempt_spend_tx)
             badtx.rehash()
             badblock = self.update_block(blockname, [badtx])
+            self.log.info(f"Now test {idx}, reject_reason {template.block_reject_reason or template.reject_reason}")
             self.send_blocks(
                 [badblock], success=False,
                 reject_reason=(template.block_reject_reason or template.reject_reason),
@@ -635,7 +637,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.move_tip(44)
         b47 = self.next_block(47)
         target = uint256_from_compact(b47.nBits)
-        while b47.sha256 <= target:
+        while b47.powhash <= target:
             # Rehash nonces until an invalid too-high-hash block is found.
             b47.nNonce += 1
             b47.rehash()

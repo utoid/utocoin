@@ -5,6 +5,7 @@
 """Test the generation of UTXO snapshots using `dumptxoutset`.
 """
 
+import os
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -43,21 +44,24 @@ class DumptxoutsetTest(BitcoinTestFramework):
 
         assert expected_path.is_file()
 
-        assert_equal(out['coins_written'], 100)
+        assert_equal(out['coins_written'], 103)
         assert_equal(out['base_height'], 100)
         assert_equal(out['path'], str(expected_path))
         # Blockhash should be deterministic based on mocked time.
+
+        use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
+
         assert_equal(
             out['base_hash'],
-            '09abf0e7b510f61ca6cf33bab104e9ee99b3528b371d27a2d4b39abb800fba7e')
+            'be95a1037af9c9fa1c1177b9515949eded22b18cafd9da9b91330e20b918d821' if use_scrypt else'09abf0e7b510f61ca6cf33bab104e9ee99b3528b371d27a2d4b39abb800fba7e')
 
         # UTXO snapshot hash should be deterministic based on mocked time.
         assert_equal(
             sha256sum_file(str(expected_path)).hex(),
-            '31fcdd0cf542a4b1dfc13c3c05106620ce48951ef62907dd8e5e8c15a0aa993b')
+            'c5aa8d5458e105b6b4c1fb0e4c0b07d83ccf4b3b54a86dae2396251d07ac9717' if use_scrypt else '31fcdd0cf542a4b1dfc13c3c05106620ce48951ef62907dd8e5e8c15a0aa993b')
 
         assert_equal(
-            out['txoutset_hash'], 'a0b7baa3bf5ccbd3279728f230d7ca0c44a76e9923fca8f32dbfd08d65ea496a')
+            out['txoutset_hash'], 'b195d445c892aa14c9b302b778ae50a45251c5efdc1892dde2874da5531e8cf5')
         assert_equal(out['nchaintx'], 101)
 
         # Specifying a path to an existing or invalid file will fail.

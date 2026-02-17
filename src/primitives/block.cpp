@@ -7,10 +7,21 @@
 
 #include <hash.h>
 #include <tinyformat.h>
+#include <consensus/params.h>
 
 uint256 CBlockHeader::GetHash() const
 {
     return (HashWriter{} << *this).GetHash();
+}
+
+uint256 CBlockHeader::GetScryptHash() const
+{
+    return (ScryptHashWriter{} << *this).GetScryptHash();
+}
+
+uint256 CBlockHeader::GetPowHash(const Consensus::Params& params) const
+{
+    return params.fScryptPow ? GetScryptHash() : GetHash();
 }
 
 std::string CBlock::ToString() const

@@ -353,9 +353,9 @@ TestChain100Setup::TestChain100Setup(
 
     {
         LOCK(::cs_main);
-        assert(
-            m_node.chainman->ActiveChain().Tip()->GetBlockHash().ToString() ==
-            "571d80a9967ae599cec0448b0b0ba1cfb606f584d8069bd7166b86854ba7a191");
+        std::string expectHash = Params().GetConsensus().fScryptPow ?
+            "3c59b87587e048b3dab57327c7f6276591a1177ae02a4272a5c3de58c029bcda" : "571d80a9967ae599cec0448b0b0ba1cfb606f584d8069bd7166b86854ba7a191";
+        assert(m_node.chainman->ActiveChain().Tip()->GetBlockHash().ToString() == expectHash);
     }
 }
 
@@ -385,7 +385,7 @@ CBlock TestChain100Setup::CreateBlock(
     }
     RegenerateCommitments(block, *Assert(m_node.chainman));
 
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, m_node.chainman->GetConsensus())) ++block.nNonce;
+    while (!CheckProofOfWork(block.GetPowHash(m_node.chainman->GetConsensus()), block.nBits, m_node.chainman->GetConsensus())) ++block.nNonce;
 
     return block;
 }

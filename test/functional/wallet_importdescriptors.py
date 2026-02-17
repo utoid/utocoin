@@ -15,6 +15,7 @@ variants.
 - `test_address()` is called to call getaddressinfo for an address on node1
   and test the values returned."""
 
+import os
 import concurrent.futures
 import time
 
@@ -688,8 +689,10 @@ class ImportDescriptorsTest(BitcoinTestFramework):
         descriptor["next_index"] = 0
 
         encrypted_wallet.walletpassphrase("passphrase", 99999)
+        use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
+        genesis_block_hash = "7c689a1b2cdee9b1c2e79e08ba2414bb6e0f611c505a677917fc6b4b61aab4cd" if use_scrypt else "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as thread:
-            with self.nodes[0].assert_debug_log(expected_msgs=["Rescan started from block 0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206... (slow variant inspecting all blocks)"], timeout=10):
+            with self.nodes[0].assert_debug_log(expected_msgs=[f"Rescan started from block {genesis_block_hash}... (slow variant inspecting all blocks)"], timeout=10):
                 importing = thread.submit(encrypted_wallet.importdescriptors, requests=[descriptor])
 
             # Set the passphrase timeout to 1 to test that the wallet remains unlocked during the rescan

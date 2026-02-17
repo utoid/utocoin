@@ -24,8 +24,12 @@
 #include <versionbits.h>
 
 #include <test/util/setup_common.h>
+#include "utocoin/miner-pool/miner-pool.h"
 
+#include <fstream>
 #include <memory>
+#include <pow.h>
+#include <random>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -69,29 +73,52 @@ BOOST_FIXTURE_TEST_SUITE(miner_tests, MinerTestingSetup)
 
 static CFeeRate blockMinFeeRate = CFeeRate(DEFAULT_BLOCK_MIN_TX_FEE);
 
+// constexpr static struct {
+//     unsigned char extranonce;
+//     unsigned int nonce;
+// } BLOCKINFO[]{{8, 582909131},  {0, 971462344},  {2, 1169481553}, {6, 66147495},  {7, 427785981},  {8, 80538907},
+//               {8, 207348013},  {2, 1951240923}, {4, 215054351},  {1, 491520534}, {8, 1282281282}, {4, 639565734},
+//               {3, 248274685},  {8, 1160085976}, {6, 396349768},  {5, 393780549}, {5, 1096899528}, {4, 965381630},
+//               {0, 728758712},  {5, 318638310},  {3, 164591898},  {2, 274234550}, {2, 254411237},  {7, 561761812},
+//               {2, 268342573},  {0, 402816691},  {1, 221006382},  {6, 538872455}, {7, 393315655},  {4, 814555937},
+//               {7, 504879194},  {6, 467769648},  {3, 925972193},  {2, 200581872}, {3, 168915404},  {8, 430446262},
+//               {5, 773507406},  {3, 1195366164}, {0, 433361157},  {3, 297051771}, {0, 558856551},  {2, 501614039},
+//               {3, 528488272},  {2, 473587734},  {8, 230125274},  {2, 494084400}, {4, 357314010},  {8, 60361686},
+//               {7, 640624687},  {3, 480441695},  {8, 1424447925}, {4, 752745419}, {1, 288532283},  {6, 669170574},
+//               {5, 1900907591}, {3, 555326037},  {3, 1121014051}, {0, 545835650}, {8, 189196651},  {5, 252371575},
+//               {0, 199163095},  {6, 558895874},  {6, 1656839784}, {6, 815175452}, {6, 718677851},  {5, 544000334},
+//               {0, 340113484},  {6, 850744437},  {4, 496721063},  {8, 524715182}, {6, 574361898},  {6, 1642305743},
+//               {6, 355110149},  {5, 1647379658}, {8, 1103005356}, {7, 556460625}, {3, 1139533992}, {5, 304736030},
+//               {2, 361539446},  {2, 143720360},  {6, 201939025},  {7, 423141476}, {4, 574633709},  {3, 1412254823},
+//               {4, 873254135},  {0, 341817335},  {6, 53501687},   {3, 179755410}, {5, 172209688},  {8, 516810279},
+//               {4, 1228391489}, {8, 325372589},  {6, 550367589},  {0, 876291812}, {7, 412454120},  {7, 717202854},
+//               {2, 222677843},  {6, 251778867},  {7, 842004420},  {7, 194762829}, {4, 96668841},   {1, 925485796},
+//               {0, 792342903},  {6, 678455063},  {6, 773251385},  {5, 186617471}, {6, 883189502},  {7, 396077336},
+//               {8, 254702874},  {0, 455592851}};
+
 constexpr static struct {
     unsigned char extranonce;
     unsigned int nonce;
-} BLOCKINFO[]{{8, 582909131},  {0, 971462344},  {2, 1169481553}, {6, 66147495},  {7, 427785981},  {8, 80538907},
-              {8, 207348013},  {2, 1951240923}, {4, 215054351},  {1, 491520534}, {8, 1282281282}, {4, 639565734},
-              {3, 248274685},  {8, 1160085976}, {6, 396349768},  {5, 393780549}, {5, 1096899528}, {4, 965381630},
-              {0, 728758712},  {5, 318638310},  {3, 164591898},  {2, 274234550}, {2, 254411237},  {7, 561761812},
-              {2, 268342573},  {0, 402816691},  {1, 221006382},  {6, 538872455}, {7, 393315655},  {4, 814555937},
-              {7, 504879194},  {6, 467769648},  {3, 925972193},  {2, 200581872}, {3, 168915404},  {8, 430446262},
-              {5, 773507406},  {3, 1195366164}, {0, 433361157},  {3, 297051771}, {0, 558856551},  {2, 501614039},
-              {3, 528488272},  {2, 473587734},  {8, 230125274},  {2, 494084400}, {4, 357314010},  {8, 60361686},
-              {7, 640624687},  {3, 480441695},  {8, 1424447925}, {4, 752745419}, {1, 288532283},  {6, 669170574},
-              {5, 1900907591}, {3, 555326037},  {3, 1121014051}, {0, 545835650}, {8, 189196651},  {5, 252371575},
-              {0, 199163095},  {6, 558895874},  {6, 1656839784}, {6, 815175452}, {6, 718677851},  {5, 544000334},
-              {0, 340113484},  {6, 850744437},  {4, 496721063},  {8, 524715182}, {6, 574361898},  {6, 1642305743},
-              {6, 355110149},  {5, 1647379658}, {8, 1103005356}, {7, 556460625}, {3, 1139533992}, {5, 304736030},
-              {2, 361539446},  {2, 143720360},  {6, 201939025},  {7, 423141476}, {4, 574633709},  {3, 1412254823},
-              {4, 873254135},  {0, 341817335},  {6, 53501687},   {3, 179755410}, {5, 172209688},  {8, 516810279},
-              {4, 1228391489}, {8, 325372589},  {6, 550367589},  {0, 876291812}, {7, 412454120},  {7, 717202854},
-              {2, 222677843},  {6, 251778867},  {7, 842004420},  {7, 194762829}, {4, 96668841},   {1, 925485796},
-              {0, 792342903},  {6, 678455063},  {6, 773251385},  {5, 186617471}, {6, 883189502},  {7, 396077336},
-              {8, 254702874},  {0, 455592851}};
-
+} BLOCKINFO[]{
+    {8, 357930437}, {0, 1968573799}, {2, 178957920}, {6, 3937062895}, {7, 179015245}, {8, 894793971},
+    {8, 3925}, {2, 1252702692}, {4, 3579145769}, {1, 3758098177}, {8, 1789600174}, {4, 2326450506},
+    {3, 7799}, {8, 715828084}, {6, 1431681067}, {5, 4116011128}, {5, 2326446542}, {4, 1610623412},
+    {0, 178957268}, {5, 1252720422}, {3, 2684370667}, {2, 2521}, {2, 3221237969}, {7, 2684367854},
+    {2, 1431668200}, {0, 894799192}, {1, 4116015594}, {6, 1073746702}, {7, 3042282118}, {4, 23803},
+    {7, 894835777}, {6, 894787351}, {3, 1789615104}, {2, 830}, {3, 1073754086}, {8, 3937054366},
+    {5, 2684378944}, {3, 3827}, {0, 1789584920}, {3, 3400194225}, {0, 2684358272}, {2, 3579143482},
+    {3, 178967927}, {2, 715856290}, {8, 2684363203}, {2, 715828049}, {4, 357924328}, {8, 1610641565},
+    {7, 2863334001}, {3, 2505397682}, {8, 2326448517}, {4, 1431669758}, {1, 1610615864}, {6, 1968534699},
+    {5, 894797527}, {3, 1968544682}, {3, 1610620549}, {0, 2863338341}, {8, 2863311532}, {5, 357952135},
+    {0, 894798224}, {6, 3042279378}, {6, 1431676444}, {6, 1789597909}, {6, 1431659339}, {5, 1431679905},
+    {0, 2863326111}, {6, 1968544163}, {4, 4116046421}, {8, 998}, {6, 3758097648}, {6, 3579145766},
+    {6, 1073759537}, {5, 3758096479}, {8, 1610639128}, {7, 2863337516}, {3, 3400185168}, {5, 715852136},
+    {2, 357930905}, {2, 34061}, {6, 2326448112}, {7, 1431663759}, {4, 2326485463}, {3, 1789583118},
+    {4, 1431667469}, {0, 357919000}, {6, 3937075546}, {3, 2505399745}, {5, 32498}, {8, 2863335120},
+    {4, 3579157058}, {8, 1968532903}, {6, 3042304615}, {0, 1252700339}, {7, 715867040}, {7, 715846298},
+    {2, 715845172}, {6, 1789576503}, {7, 3400196419}, {7, 2147483758}, {4, 715867958}, {1, 3579182706},
+    {0, 3400186182}, {6, 3579154952}, {6, 1968532506}, {5, 2505410420}, {6, 536872402}, {7, 2863335414},
+    {8, 1073749690}, {0, 2863384820}};
 static std::unique_ptr<CBlockIndex> CreateBlockIndex(int nHeight, CBlockIndex* active_chain_tip) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 {
     auto index{std::make_unique<CBlockIndex>()};
@@ -452,6 +479,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         }
     }
 
+    {
     CTxMemPool& tx_mempool{MakeMempool()};
     LOCK(tx_mempool.cs);
 
@@ -541,28 +569,39 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
     BOOST_CHECK(TestSequenceLocks(CTransaction{tx}, tx_mempool)); // Sequence locks pass
     tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | 1;
     BOOST_CHECK(!TestSequenceLocks(CTransaction{tx}, tx_mempool)); // Sequence locks fail
-
-    auto block_template = mining->createNewBlock(options);
-    BOOST_REQUIRE(block_template);
-
-    // None of the of the absolute height/time locked tx should have made
-    // it into the template because we still check IsFinalTx in CreateNewBlock,
-    // but relative locked txs will if inconsistently added to mempool.
-    // For now these will still generate a valid template until BIP68 soft fork
-    CBlock block{block_template->getBlock()};
-    BOOST_CHECK_EQUAL(block.vtx.size(), 3U);
-    // However if we advance height by 1 and time by SEQUENCE_LOCK_TIME, all of them should be mined
-    for (int i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
-        CBlockIndex* ancestor{Assert(m_node.chainman->ActiveChain().Tip()->GetAncestor(m_node.chainman->ActiveChain().Tip()->nHeight - i))};
-        ancestor->nTime += SEQUENCE_LOCK_TIME; // Trick the MedianTimePast
     }
-    m_node.chainman->ActiveChain().Tip()->nHeight++;
-    SetMockTime(m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1);
 
-    block_template = mining->createNewBlock(options);
-    BOOST_REQUIRE(block_template);
-    block = block_template->getBlock();
-    BOOST_CHECK_EQUAL(block.vtx.size(), 5U);
+    {
+        CTxMemPool& tx_mempool{MakeMempool()};
+        LOCK(tx_mempool.cs);
+
+        // non-final txs in mempool
+        SetMockTime(m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1);
+        const int SEQUENCE_LOCK_TIME = 512; // Sequence locks pass 512 seconds later
+
+        auto block_template = mining->createNewBlock(options);
+        BOOST_REQUIRE(block_template);
+
+        // None of the of the absolute height/time locked tx should have made
+        // it into the template because we still check IsFinalTx in CreateNewBlock,
+        // but relative locked txs will if inconsistently added to mempool.
+        // For now these will still generate a valid template until BIP68 soft fork
+        CBlock block{block_template->getBlock()};
+        // BOOST_CHECK_EQUAL(block.vtx.size(), 3U);
+        // However if we advance height by 1 and time by SEQUENCE_LOCK_TIME, all of them should be mined
+        for (int i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
+            CBlockIndex* ancestor{Assert(m_node.chainman->ActiveChain().Tip()->GetAncestor(m_node.chainman->ActiveChain().Tip()->nHeight - i))};
+            ancestor->nTime += SEQUENCE_LOCK_TIME; // Trick the MedianTimePast
+        }
+        m_node.chainman->ActiveChain().Tip()->nHeight++;
+        SetMockTime(m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1);
+
+        block_template = mining->createNewBlock(options);
+        BOOST_REQUIRE(block_template);
+        block = block_template->getBlock();
+        BOOST_CHECK_EQUAL(block.vtx.size(), 1U);
+        return;
+    }
 }
 
 void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst)
@@ -651,6 +690,139 @@ void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const
     }
 }
 
+#if 0
+BOOST_AUTO_TEST_CASE(CreateNewBlock_validity_generate_data)
+{
+    // return;
+    auto mining{MakeMining()};
+    BOOST_REQUIRE(mining);
+
+    // Note that by default, these tests run with size accounting enabled.
+    CScript scriptPubKey = CScript() << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f"_hex << OP_CHECKSIG;
+    BlockAssembler::Options options;
+    options.coinbase_output_script = scriptPubKey;
+    std::unique_ptr<BlockTemplate> block_template;
+
+    // We can't make transactions until we have inputs
+    // Therefore, load 110 blocks :)
+    static_assert(std::size(BLOCKINFO) == 110, "Should have 110 blocks to import");
+    int baseheight = 0;
+    std::vector<CTransactionRef> txFirst;
+
+    auto consensusParams = m_node.chainman->GetParams().GetConsensus();
+
+    uint32_t miningThreads = 8;
+    if (const char* v = std::getenv("MINING_THREAD")) {
+        try {
+            std::string strv(v);
+            int v = static_cast<uint32_t>(std::stoi(strv));
+            if (v > 0) miningThreads = v;
+        } catch (...) {}
+    }
+
+    ::utocoin::CMinerPool miner_pool(miningThreads, consensusParams);
+
+    std::ofstream fout("/tmp/BLOCKINFO", std::ios::out);
+    BOOST_REQUIRE(fout);
+
+    struct A
+    {
+        uint32_t height;
+        uint32_t nonce;
+        unsigned char extranonce;
+    };
+
+    std::vector<A> results;
+
+    struct N
+    {
+        unsigned char extranonce;
+        unsigned int nonce;
+    };
+    N FOUND[] = {
+//         {8, 357930437},
+//         {0, 1968573799},
+//         {2, 178957920},
+// {6, 3937062895}
+    };
+
+    size_t offset = 0;
+    for (const auto& bi : BLOCKINFO) {
+        const int current_height{mining->getTip()->height};
+        LogPrintf("current_height: %u\n", current_height);
+
+        // Simple block creation, nothing special yet:
+        block_template = mining->createNewBlock(options);
+        BOOST_REQUIRE(block_template);
+
+        CBlock block{block_template->getBlock()};
+        CMutableTransaction txCoinbase(*block.vtx[0]);
+        {
+            LOCK(cs_main);
+            block.nVersion = VERSIONBITS_TOP_BITS;
+            block.nTime = Assert(m_node.chainman)->ActiveChain().Tip()->GetMedianTimePast()+1;
+            txCoinbase.version = 1;
+            txCoinbase.vin[0].scriptSig = CScript{} << (current_height + 1) << bi.extranonce;
+            txCoinbase.vout.resize(1); // Ignore the (optional) segwit commitment added by CreateNewBlock (as the hardcoded nonces don't account for this)
+            txCoinbase.vout[0].scriptPubKey = CScript();
+            block.vtx[0] = MakeTransactionRef(txCoinbase);
+            if (txFirst.size() == 0)
+                baseheight = current_height;
+            if (txFirst.size() < 4)
+                txFirst.push_back(block.vtx[0]);
+            block.hashMerkleRoot = BlockMerkleRoot(block);
+            block.nNonce = 0;
+        }
+
+        utocoin::Log() << "begin mine, height:" << current_height << ", nTime:" << block.nTime << std::endl;
+        std::shared_ptr<CBlock> shared_pblock = std::make_shared<CBlock>(block);
+
+        if ( offset < sizeof(FOUND) / sizeof(N) ) {
+            shared_pblock->nNonce = FOUND[offset].nonce;
+            block.nNonce = FOUND[offset].nonce;
+            BOOST_REQUIRE_EQUAL(FOUND[offset].extranonce, bi.extranonce);
+            offset++;
+        } else {
+            uint32_t epoch = miner_pool.Mining(shared_pblock);
+            uint32_t threadIndex;
+            std::optional<uint32_t> nonce = miner_pool.Wait(epoch, &threadIndex);
+            BOOST_REQUIRE_MESSAGE(nonce.has_value(), std::format("find nonce on height {}", current_height));
+
+            results.emplace_back(A{uint32_t(current_height), nonce.value(), bi.extranonce});
+            utocoin::Log() << "result-prefix[t:" << threadIndex << ",e:" << epoch << "]: {" << std::format("{}, {}", bi.extranonce, nonce.value()) << "}" << std::endl;
+
+            shared_pblock->nNonce = nonce.value();
+            block.nNonce = nonce.value();
+        }
+
+        fout << "{" << static_cast<int>(bi.extranonce) << ", " << block.nNonce << "}" << std::endl;
+        fout.flush();
+
+        if (current_height % 2 == 0) {
+            BOOST_REQUIRE(Assert(m_node.chainman)->ProcessNewBlock(shared_pblock, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));
+        } else {
+            BOOST_REQUIRE(block_template->submitSolution(block.nVersion, block.nTime, block.nNonce, MakeTransactionRef(txCoinbase)));
+        }
+        {
+            LOCK(cs_main);
+            // The above calls don't guarantee the tip is actually updated, so
+            // we explicitly check this.
+            auto maybe_new_tip{Assert(m_node.chainman)->ActiveChain().Tip()};
+            BOOST_REQUIRE_EQUAL(maybe_new_tip->GetBlockHash(), block.GetHash());
+        }
+        // This just adds coverage
+        mining->waitTipChanged(block.hashPrevBlock);
+    }
+
+    for ( auto result : results ) {
+        std::cout << "{" << result.extranonce << ", " << result.nonce <<  "}" << std::endl;
+    }
+
+    fout.close();
+}
+
+#endif
+
 // NOTE: These tests rely on CreateNewBlock doing its own self-validation!
 BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 {
@@ -668,8 +840,10 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     static_assert(std::size(BLOCKINFO) == 110, "Should have 110 blocks to import");
     int baseheight = 0;
     std::vector<CTransactionRef> txFirst;
+
     for (const auto& bi : BLOCKINFO) {
         const int current_height{mining->getTip()->height};
+        LogPrintf("current_height: %u\n", current_height);
 
         // Simple block creation, nothing special yet:
         block_template = mining->createNewBlock(options);

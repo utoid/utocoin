@@ -38,6 +38,7 @@
 #include <unistd.h>
 #endif
 
+#include <chainparams.h>
 #include <event2/buffer.h>
 #include <event2/keyvalq_struct.h>
 #include <support/events.h>
@@ -53,7 +54,7 @@ using CliClock = std::chrono::system_clock;
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 
 static const char DEFAULT_RPCCONNECT[] = "127.0.0.1";
-static const int DEFAULT_HTTP_CLIENT_TIMEOUT=900;
+static const int DEFAULT_HTTP_CLIENT_TIMEOUT=1800;
 static constexpr int DEFAULT_WAIT_CLIENT_TIMEOUT = 0;
 static const bool DEFAULT_NAMED=false;
 static const int CONTINUE_EXECUTION=-1;
@@ -108,6 +109,7 @@ static void SetupCliArgs(ArgsManager& argsman)
     argsman.AddArg("-stdin", "Read extra arguments from standard input, one per line until EOF/Ctrl-D (recommended for sensitive information such as passphrases). When combined with -stdinrpcpass, the first line from standard input is used for the RPC password.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-stdinrpcpass", "Read RPC password from standard input as a single line. When combined with -stdin, the first line from standard input is used for the RPC password. When combined with -stdinwalletpassphrase, -stdinrpcpass consumes the first line, and -stdinwalletpassphrase consumes the second.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-stdinwalletpassphrase", "Read wallet passphrase from standard input as a single line. When combined with -stdin, the first line from standard input is used for the wallet passphrase.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-powhash", "Query the pow hash algorithm of a specific chain, the output is scrypt or sha256", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 }
 
 std::optional<std::string> RpcWalletName(const ArgsManager& args)
@@ -193,6 +195,17 @@ static int AppInitRPC(int argc, char* argv[])
     } catch (const std::exception& e) {
         tfm::format(std::cerr, "Error: %s\n", e.what());
         return EXIT_FAILURE;
+    }
+
+    if (gArgs.IsArgSet("-powhash")) {
+        try {
+            SelectParams(gArgs.GetChainType());
+            tfm::format(std::cout, "%s\n", Params().GetConsensus().fScryptPow ? "scrypt" : "sha256");
+        } catch (const std::exception& e) {
+            tfm::format(std::cerr, "Error: %s\n", e.what());
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
     }
     return CONTINUE_EXECUTION;
 }

@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the getblockfrompeer RPC."""
 
+import os
 from test_framework.authproxy import JSONRPCException
 from test_framework.messages import (
     CBlock,
@@ -143,7 +144,8 @@ class GetBlockFromPeerTest(BitcoinTestFramework):
         self.sync_blocks([self.nodes[0], pruned_node])
         pruneheight += 251
         assert_equal(pruned_node.pruneblockchain(700), pruneheight)
-        assert_equal(pruned_node.getblock(pruned_block)["hash"], "36c56c5b5ebbaf90d76b0d1a074dcb32d42abab75b7ec6fa0ffd9b4fbce8f0f7")
+        use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
+        assert_equal(pruned_node.getblock(pruned_block)["hash"], "210b16bd763fab7ac9f8feded3a644a716f995ea526b7d426f1e701c3d5888ca" if use_scrypt else "36c56c5b5ebbaf90d76b0d1a074dcb32d42abab75b7ec6fa0ffd9b4fbce8f0f7")
 
         self.log.info("Fetched block can be pruned again when prune height exceeds the height of the tip at the time when the block was fetched")
         self.generate(self.nodes[0], 250, sync_fun=self.no_op)

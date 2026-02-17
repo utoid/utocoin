@@ -178,6 +178,25 @@ struct SnapshotTestSetup : TestChain100Setup {
     {
     }
 
+    CTransactionRef GetGenesisCoinbase(node::NodeContext &node)
+    {
+        const CBlockIndex* pindex = Assert(node.chainman)->ActiveChainstate().m_chain.Genesis();
+
+        CBlock block;
+        bool ok = Assert(node.chainman)->m_blockman.ReadBlock(block, *pindex);
+        if (!ok) {
+            throw std::runtime_error("Failed to read genesis block");
+        }
+
+        const CTransactionRef& coinbase = block.vtx[0];
+        return coinbase;
+    }
+
+    size_t GetGenesisCoinsCount(node::NodeContext &node) {
+        CTransactionRef tx = GetGenesisCoinbase(node);
+        return tx->vout.size();
+    }
+
     std::tuple<Chainstate*, Chainstate*> SetupSnapshot()
     {
         ChainstateManager& chainman = *Assert(m_node.chainman);
@@ -191,7 +210,7 @@ struct SnapshotTestSetup : TestChain100Setup {
         }
 
         size_t initial_size;
-        size_t initial_total_coins{100};
+        size_t initial_total_coins{103};
 
         // Make some initial assertions about the contents of the chainstate.
         {
@@ -205,6 +224,7 @@ struct SnapshotTestSetup : TestChain100Setup {
                 BOOST_CHECK(ibd_coinscache.HaveCoin(op));
                 total_coins++;
             }
+            total_coins += GetGenesisCoinsCount(m_node);
 
             BOOST_CHECK_EQUAL(total_coins, initial_total_coins);
             BOOST_CHECK_EQUAL(initial_size, initial_total_coins);
@@ -315,6 +335,13 @@ struct SnapshotTestSetup : TestChain100Setup {
                     total_coins++;
                 }
 
+                CTransactionRef genesisTx = GetGenesisCoinbase(m_node);
+                for ( uint32_t i = 0;i < genesisTx->vout.size();i++ ) {
+                    COutPoint op{genesisTx->GetHash(), i};
+                    BOOST_CHECK(coinscache.HaveCoin(op));
+                    total_coins++;
+                }
+
                 BOOST_CHECK_EQUAL(initial_size , coinscache.GetCacheSize());
                 BOOST_CHECK_EQUAL(total_coins, initial_total_coins);
                 chains_tested++;
@@ -340,6 +367,16 @@ struct SnapshotTestSetup : TestChain100Setup {
 
                 for (CTransactionRef& txn : m_coinbase_txns) {
                     COutPoint op{txn->GetHash(), 0};
+                    if (coinscache.HaveCoin(op)) {
+                        (is_background ? coins_in_background : coins_in_active)++;
+                    } else if (is_background) {
+                        coins_missing_from_background++;
+                    }
+                }
+
+                CTransactionRef genesisTx = GetGenesisCoinbase(m_node);
+                for ( uint32_t i = 0;i < genesisTx->vout.size();i++ ) {
+                    COutPoint op{genesisTx->GetHash(), 0};
                     if (coinscache.HaveCoin(op)) {
                         (is_background ? coins_in_background : coins_in_active)++;
                     } else if (is_background) {

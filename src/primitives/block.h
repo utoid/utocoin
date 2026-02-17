@@ -9,6 +9,7 @@
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <uint256.h>
+#include <consensus/params.h>
 #include <util/time.h>
 
 /** Nodes collect new transactions into a block, hash them into a hash tree,
@@ -52,6 +53,10 @@ public:
     }
 
     uint256 GetHash() const;
+
+    uint256 GetScryptHash() const;
+
+    uint256 GetPowHash(const Consensus::Params& params) const;
 
     NodeSeconds Time() const
     {

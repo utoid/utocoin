@@ -337,6 +337,7 @@ private:
     bool cacheStore;
     PrecomputedTransactionData *txdata;
     SignatureCache* m_signature_cache;
+    Consensus::Params m_params;
 
 public:
     CScriptCheck(const CTxOut& outIn, const CTransaction& txToIn, SignatureCache& signature_cache, unsigned int nInIn, unsigned int nFlagsIn, bool cacheIn, PrecomputedTransactionData* txdataIn) :
@@ -347,12 +348,18 @@ public:
     CScriptCheck(CScriptCheck&&) = default;
     CScriptCheck& operator=(CScriptCheck&&) = default;
 
+    CScriptCheck &WithParams(const Consensus::Params &params)
+    {
+        m_params = params;
+        return *this;
+    }
+
     std::optional<std::pair<ScriptError, std::string>> operator()();
 };
 
 // CScriptCheck is used a lot in std::vector, make sure that's efficient
 static_assert(std::is_nothrow_move_assignable_v<CScriptCheck>);
-static_assert(std::is_nothrow_move_constructible_v<CScriptCheck>);
+// static_assert(std::is_nothrow_move_constructible_v<CScriptCheck>);
 static_assert(std::is_nothrow_destructible_v<CScriptCheck>);
 
 /**

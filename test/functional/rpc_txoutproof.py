@@ -20,8 +20,8 @@ class MerkleBlockTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.extra_args = [
+            ["-txindex=0"],
             [],
-            ["-txindex"],
         ]
 
     def run_test(self):

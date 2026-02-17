@@ -18,6 +18,9 @@ ONION_ADDR = "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion:833
 
 
 class AnchorsTest(BitcoinTestFramework):
+    def skip_test_if_missing_module(self):
+        self.skip_if_use_scrypt()
+
     def set_test_params(self):
         self.num_nodes = 1
         self.disable_autoconnect = False

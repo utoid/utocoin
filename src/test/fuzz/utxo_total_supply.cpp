@@ -35,6 +35,16 @@ FUZZ_TARGET(utxo_total_supply)
             },
         },
     };
+
+    static bool outputWarning = true;
+    if (Params().GetConsensus().fScryptPow) {
+        if (outputWarning) {
+            std::cout << "Warning: The utxo_total_supply test case has been skipped because it uses the Scrypt hash algorithm, which would take an estimated 30+ days to complete." << std::endl;
+            outputWarning = false;
+        }
+        return;
+    }
+
     // Create chainstate
     test_setup.LoadVerifyActivateChainstate();
     auto& node{test_setup.m_node};

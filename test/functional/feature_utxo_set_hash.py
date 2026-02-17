@@ -18,9 +18,11 @@ class UTXOSetHashTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
+        self.extra_args = [["-coinstatsindex"]] 
 
     def test_muhash_implementation(self):
         self.log.info("Test MuHash implementation consistency")
+        
 
         node = self.nodes[0]
         wallet = MiniWallet(node)
@@ -42,6 +44,20 @@ class UTXOSetHashTest(BitcoinTestFramework):
         # a MuHash object
         muhash = MuHash3072()
 
+        genesis_hash = node.getblockhash(0)
+        genesis_block = from_hex(CBlock(), node.getblock(genesis_hash, False))
+        genesis_height = 0
+        genesis_cb = genesis_block.vtx[0]
+
+        for n, tx_out in enumerate(genesis_cb.vout):
+            coinbase = 1  
+
+            data = COutPoint(int(genesis_cb.rehash(), 16), n).serialize()
+            data += (genesis_height * 2 + coinbase).to_bytes(4, "little")
+            data += tx_out.serialize()
+
+            muhash.insert(data)
+
         for height, block in enumerate(blocks):
             # The Genesis block coinbase is not part of the UTXO set and we
             # spent the first mined block
@@ -60,15 +76,15 @@ class UTXOSetHashTest(BitcoinTestFramework):
                     data += tx_out.serialize()
 
                     muhash.insert(data)
-
+                    
         finalized = muhash.digest()
         node_muhash = node.gettxoutsetinfo("muhash")['muhash']
 
         assert_equal(finalized[::-1].hex(), node_muhash)
 
         self.log.info("Test deterministic UTXO set hash results")
-        assert_equal(node.gettxoutsetinfo()['hash_serialized_3'], "d1c7fec1c0623f6793839878cbe2a531eb968b50b27edd6e2a57077a5aed6094")
-        assert_equal(node.gettxoutsetinfo("muhash")['muhash'], "d1725b2fe3ef43e55aa4907480aea98d406fc9e0bf8f60169e2305f1fbf5961b")
+        assert_equal(node.gettxoutsetinfo()['hash_serialized_3'], "85fc5af4958658a1a61fe758550931bc7af4f6e7f4b6ee971defaf02e9bae32e")
+        assert_equal(node.gettxoutsetinfo("muhash")['muhash'], "84dfef3c90463596aabaf715bdcb457bccda7e0d9c54146338e90e16ea9721d9")
 
     def run_test(self):
         self.test_muhash_implementation()

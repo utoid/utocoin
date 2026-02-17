@@ -21,6 +21,9 @@ from test_framework.wallet import (
 
 
 class ScanblocksTest(BitcoinTestFramework):
+    def skip_test_if_missing_module(self):
+        self.skip_if_use_scrypt()
+
     def set_test_params(self):
         self.num_nodes = 2
         self.extra_args = [["-blockfilterindex=1"], []]

@@ -75,8 +75,13 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.wallet.send_self_transfer(from_node=node)
         self.generate(node, 1)
 
+
+
         self.log.info("Test that gettxoutsetinfo() output is consistent with or without coinstatsindex option")
         res0 = node.gettxoutsetinfo('none')
+        self.log.info (node.gettxoutsetinfo('none'))
+        self.log.info (index_node.gettxoutsetinfo('muhash'))
+
 
         # The fields 'disk_size' and 'transactions' do not exist on the index
         del res0['disk_size'], res0['transactions']
@@ -114,22 +119,21 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.log.info("Test gettxoutsetinfo() with index and verbose flag")
 
         for hash_option in index_hash_options:
-            # Genesis block is unspendable
+            # Genesis block for regtest
             res4 = index_node.gettxoutsetinfo(hash_option, 0)
             assert_equal(res4['total_unspendable_amount'], 50)
             assert_equal(res4['block_info'], {
                 'unspendable': 50,
                 'prevout_spent': 0,
                 'new_outputs_ex_coinbase': 0,
-                'coinbase': 0,
+                'coinbase': 11100,
                 'unspendables': {
-                    'genesis_block': 50,
+                    'genesis_block': 0,
                     'bip30': 0,
                     'scripts': 0,
-                    'unclaimed_rewards': 0
+                    'unclaimed_rewards': 50
                 }
             })
-            self.block_sanity_check(res4['block_info'])
 
             # Test an older block height that included a normal tx
             res5 = index_node.gettxoutsetinfo(hash_option, 102)

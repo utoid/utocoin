@@ -345,11 +345,11 @@ class BlockchainTest(BitcoinTestFramework):
         node = self.nodes[0]
         res = node.gettxoutsetinfo()
 
-        assert_equal(res['total_amount'], Decimal('8725.00000000'))
-        assert_equal(res['transactions'], HEIGHT)
+        assert_equal(res['total_amount'], Decimal('19825.00000000'))
+        assert_equal(res['transactions'], HEIGHT + 1)
         assert_equal(res['height'], HEIGHT)
-        assert_equal(res['txouts'], HEIGHT)
-        assert_equal(res['bogosize'], 16800),
+        assert_equal(res['txouts'], HEIGHT + 3)
+        assert_equal(res['bogosize'], 16978),
         assert_equal(res['bestblock'], node.getblockhash(HEIGHT))
         size = res['disk_size']
         assert size > 6400
@@ -362,11 +362,11 @@ class BlockchainTest(BitcoinTestFramework):
         node.invalidateblock(b1hash)
 
         res2 = node.gettxoutsetinfo()
-        assert_equal(res2['transactions'], 0)
-        assert_equal(res2['total_amount'], Decimal('0'))
+        assert_equal(res2['transactions'], 1)
+        assert_equal(res2['total_amount'], Decimal('11100.00000000'))
         assert_equal(res2['height'], 0)
-        assert_equal(res2['txouts'], 0)
-        assert_equal(res2['bogosize'], 0),
+        assert_equal(res2['txouts'], 3)
+        assert_equal(res2['bogosize'], 178),
         assert_equal(res2['bestblock'], node.getblockhash(0))
         assert_equal(len(res2['hash_serialized_3']), 64)
 

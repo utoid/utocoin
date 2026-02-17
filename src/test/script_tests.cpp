@@ -92,6 +92,7 @@ static ScriptErrorDesc script_errors[]={
     {SCRIPT_ERR_WITNESS_PUBKEYTYPE, "WITNESS_PUBKEYTYPE"},
     {SCRIPT_ERR_OP_CODESEPARATOR, "OP_CODESEPARATOR"},
     {SCRIPT_ERR_SIG_FINDANDDELETE, "SIG_FINDANDDELETE"},
+    {SCRIPT_ERR_CHECKDATSIGVERIFY, "SCRIPT_ERR_CHECKDATSIGVERIFY"},
 };
 
 static std::string FormatScriptError(ScriptError_t err)
@@ -325,11 +326,39 @@ public:
         return *this;
     }
 
+    TestBuilder& PushDatSig(const CKey& key, const std::vector<unsigned char>& vchDat,  int nHashType = SIGHASH_ALL, unsigned int lenR = 32, unsigned int lenS = 32, SigVersion sigversion = SigVersion::BASE, CAmount amount = 0)
+    {
+        uint256 txhash = SignatureHash(script, spendTx, 0, nHashType, amount, sigversion);
+        uint256 dathash = Hash(vchDat);
+        uint256 hash = Hash(dathash, txhash);
+
+        std::vector<unsigned char> vchSig, r, s;
+        uint32_t iter = 0;
+        do {
+            key.Sign(hash, vchSig, false, iter++);
+            if ((lenS == 33) != (vchSig[5 + vchSig[3]] == 33)) {
+                NegateSignatureS(vchSig);
+            }
+            r = std::vector<unsigned char>(vchSig.begin() + 4, vchSig.begin() + 4 + vchSig[3]);
+            s = std::vector<unsigned char>(vchSig.begin() + 6 + vchSig[3], vchSig.begin() + 6 + vchSig[3] + vchSig[5 + vchSig[3]]);
+        } while (lenR != r.size() || lenS != s.size());
+        vchSig.push_back(static_cast<unsigned char>(nHashType));
+        DoPush(vchSig);
+        return *this;
+    }
+
     TestBuilder& PushWitSig(const CKey& key, CAmount amount = -1, int nHashType = SIGHASH_ALL, unsigned int lenR = 32, unsigned int lenS = 32, SigVersion sigversion = SigVersion::WITNESS_V0)
     {
         if (amount == -1)
             amount = nValue;
         return PushSig(key, nHashType, lenR, lenS, sigversion, amount).AsWit();
+    }
+
+    TestBuilder &PushWitDatSig(const CKey& key, const std::vector<unsigned char>& vchDat,  int nHashType = SIGHASH_ALL, unsigned int lenR = 32, unsigned int lenS = 32, SigVersion sigversion = SigVersion::WITNESS_V0, CAmount amount = -1)
+    {
+        if (amount == -1)
+            amount = nValue;
+        return PushDatSig(key, vchDat, nHashType, lenR, lenS, sigversion, amount).AsWit();
     }
 
     TestBuilder& Push(const CPubKey& pubkey)
@@ -1721,6 +1750,44 @@ BOOST_AUTO_TEST_CASE(compute_tapleaf)
 
     BOOST_CHECK_EQUAL(ComputeTapleafHash(0xc0, Span(script)), tlc0);
     BOOST_CHECK_EQUAL(ComputeTapleafHash(0xc2, Span(script)), tlc2);
+}
+
+BOOST_AUTO_TEST_CASE(script_checkdatsig) {
+    const KeyData keys;
+    std::vector<TestBuilder> tests;
+
+    tests.push_back(TestBuilder(CScript() << ToByteVector(keys.pubkey0) << OP_CHECKDATSIGVERIFY << OP_CHECKSIG, "Q2PK",0)
+        .PushSig(keys.key1).PushDatSig(keys.key0, ToByteVector(keys.pubkey1)).Push(keys.pubkey1));
+
+    tests.push_back(TestBuilder(CScript() << ToByteVector(keys.pubkey0) << OP_CHECKDATSIGVERIFY << OP_CHECKSIG, "Q2PK bad data",0)
+        .PushSig(keys.key1).PushDatSig(keys.key0, ToByteVector(keys.pubkey1)).Push(keys.pubkey1).DamagePush(10).ScriptError(SCRIPT_ERR_CHECKDATSIGVERIFY));
+
+    tests.push_back(TestBuilder(CScript() << ToByteVector(keys.pubkey0) << OP_CHECKDATSIGVERIFY << OP_CHECKSIG, "Q2PK bad datsig",0)
+        .PushSig(keys.key1).PushDatSig(keys.key0, ToByteVector(keys.pubkey1)).DamagePush(10).Push(keys.pubkey1).ScriptError(SCRIPT_ERR_CHECKDATSIGVERIFY));
+
+    tests.push_back(TestBuilder(CScript() << ToByteVector(keys.pubkey0) << OP_CHECKDATSIGVERIFY << OP_CHECKSIG, "Q2PK sig without data",0)
+        .PushSig(keys.key1).PushSig(keys.key0).Push(keys.pubkey1).ScriptError(SCRIPT_ERR_CHECKDATSIGVERIFY));
+
+    tests.push_back(TestBuilder(CScript() << ToByteVector(keys.pubkey0) << OP_CHECKDATSIGVERIFY << OP_CHECKSIG, "Q2PK bad tx sig",0)
+        .PushSig(keys.key1).DamagePush(10).PushDatSig(keys.key0, ToByteVector(keys.pubkey1)).Push(keys.pubkey1).ScriptError(SCRIPT_ERR_EVAL_FALSE));
+
+    tests.push_back(TestBuilder(CScript() << OP_DUP << OP_HASH160 << ToByteVector(keys.pubkey0.GetID()) << OP_EQUALVERIFY << OP_CHECKDATSIGVERIFY << OP_CHECKSIG, "Q2PKH",0)
+        .PushSig(keys.key1).PushDatSig(keys.key0, ToByteVector(keys.pubkey1)).Push(keys.pubkey1).Push(keys.pubkey0));
+
+    tests.push_back(TestBuilder(CScript() << OP_DUP << OP_HASH160 << ToByteVector(keys.pubkey0.GetID()) << OP_EQUALVERIFY << OP_CHECKDATSIGVERIFY << OP_CHECKSIG, "Q2PKH bad sig hash",0)
+        .PushSig(keys.key1).PushDatSig(keys.key0, ToByteVector(keys.pubkey1)).Push(keys.pubkey1).Push(keys.pubkey1).ScriptError(SCRIPT_ERR_EQUALVERIFY));
+
+    tests.push_back(TestBuilder(CScript() << ToByteVector(keys.pubkey0) << OP_CHECKDATSIGVERIFY << OP_CHECKSIG, "Basic Q2SH",
+                                SCRIPT_VERIFY_WITNESS | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS_PUBKEYTYPE, true )
+        .PushSig(keys.key1).PushDatSig(keys.key0, ToByteVector(keys.pubkey1)).Push(keys.pubkey1).PushRedeem());
+
+    tests.push_back(TestBuilder(CScript() << ToByteVector(keys.pubkey0C) << OP_CHECKDATSIGVERIFY << OP_CHECKSIG, "Basic Q2WSH",
+                                SCRIPT_VERIFY_WITNESS | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS_PUBKEYTYPE, false, WitnessMode::SH, 0, 1)
+        .PushWitSig(keys.key1C).PushWitDatSig(keys.key0C, ToByteVector(keys.pubkey1C)).Push(keys.pubkey1C).AsWit().PushWitRedeem());
+
+    for (TestBuilder& test : tests) {
+        test.Test(*this);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

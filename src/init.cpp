@@ -91,6 +91,7 @@
 #include <validation.h>
 #include <validationinterface.h>
 #include <walletinitinterface.h>
+#include <utocoin/init.h>
 
 #include <algorithm>
 #include <condition_variable>
@@ -515,6 +516,8 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-startupnotify=<cmd>", "Execute command on startup.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-shutdownnotify=<cmd>", "Execute command immediately before beginning shutdown. The need for shutdown may be urgent, so be careful not to delay it long (if the command doesn't require interaction with the server, consider having it fork into the background).", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 #endif
+    // TODO: force to enable txindex for OP_STAKEBURN and remove -txindex argument
+    // TODO: remove other conflict argument with -txindex=true, like -prune
     argsman.AddArg("-txindex", strprintf("Maintain a full transaction index, used by the getrawtransaction rpc call (default: %u)", DEFAULT_TXINDEX), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blockfilterindex=<type>",
                  strprintf("Maintain an index of compact filters by block (default: %s, values: %s).", DEFAULT_BLOCKFILTERINDEX, ListBlockFilterTypes()) +
@@ -893,7 +896,7 @@ bool AppInitBasicSetup(const ArgsManager& args, std::atomic<int>& exit_status)
     return true;
 }
 
-bool AppInitParameterInteraction(const ArgsManager& args)
+bool AppInitParameterInteraction(ArgsManager& args)
 {
     const CChainParams& chainparams = Params();
     // ********************************************************* Step 2: parameter interactions
@@ -910,6 +913,12 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     bilingual_str errors;
     for (const auto& arg : args.GetUnsuitableSectionOnlyArgs()) {
         errors += strprintf(_("Config setting for %s only applied on %s network when in [%s] section."), arg, ChainTypeToString(chain), ChainTypeToString(chain)) + Untranslated("\n");
+    }
+
+    if (chain == ChainType::MAIN || chain == ChainType::TESTNET4) {
+        if (!args.GetBoolArg("-txindex", DEFAULT_TXINDEX)) {
+            errors += strprintf(_("txindex is required in testnet4 and mainnet for verify OP_STAKEBURN")) + Untranslated("\n");
+        }
     }
 
     if (!errors.empty()) {
@@ -965,6 +974,8 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     }
 
     if (args.GetIntArg("-prune", 0)) {
+        // Prune mode is incompatible with txindex, reindex-chainstate, and -reindex
+        args.SoftSetBoolArg("-txindex", false);
         if (args.GetBoolArg("-txindex", DEFAULT_TXINDEX))
             return InitError(_("Prune mode is incompatible with -txindex."));
         if (args.GetBoolArg("-reindex-chainstate", false)) {
@@ -1334,6 +1345,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 {
     const ArgsManager& args = *Assert(node.args);
     const CChainParams& chainparams = Params();
+
+    ::utocoin::Init();
 
     auto opt_max_upload = ParseByteUnits(args.GetArg("-maxuploadtarget", DEFAULT_MAX_UPLOAD_TARGET), ByteUnit::M);
     if (!opt_max_upload) {

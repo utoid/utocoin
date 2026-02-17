@@ -54,10 +54,10 @@ class WalletBackupTest(BitcoinTestFramework):
         self.noban_tx_relay = True
         # nodes 1, 2, 3 are spenders, let's give them a keypool=100
         self.extra_args = [
-            ["-keypool=100"],
-            ["-keypool=100"],
-            ["-keypool=100"],
-            [],
+            ["-keypool=100", "-txindex=0"],
+            ["-keypool=100", "-txindex=0"],
+            ["-keypool=100", "-txindex=0"],
+            ["-txindex=0"],
         ]
         self.rpc_timeout = 120
 

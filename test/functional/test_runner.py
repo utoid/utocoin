@@ -353,6 +353,8 @@ BASE_SCRIPTS = [
     'wallet_sendall.py --descriptors',
     'wallet_sendmany.py --descriptors',
     'wallet_sendmany.py --legacy-wallet',
+    'wallet_sendmanyex.py --descriptors',
+    'wallet_sendmanyex.py --legacy-wallet',
     'wallet_create_tx.py --descriptors',
     'wallet_inactive_hdchains.py --legacy-wallet',
     'wallet_spend_unconfirmed.py',
@@ -414,6 +416,8 @@ BASE_SCRIPTS = [
     'wallet_migration.py',
     'p2p_ibd_txrelay.py',
     'p2p_seednode.py',
+
+    'feature_genesis_spentable.py',
     # Don't append tests at the end to avoid merge conflicts
     # Put them in a random line within the section that fits their approximate run-time
 ]
@@ -452,6 +456,8 @@ def main():
     parser.add_argument("--nocleanup", dest="nocleanup", default=False, action="store_true",
                         help="Leave bitcoinds and test.* datadir on exit or error")
     parser.add_argument('--resultsfile', '-r', help='store test results (as CSV) to the provided file')
+    parser.add_argument('--skipn', type=int, help='skip n test files')
+    parser.add_argument('--startcase', help='start from this test case')
 
     args, unknown_args = parser.parse_known_args()
     fail_on_warn = args.ci
@@ -555,6 +561,17 @@ def main():
     if args.filter:
         test_list = list(filter(re.compile(args.filter).search, test_list))
 
+    if args.skipn:
+        test_list = test_list[args.skipn:]
+
+    if args.startcase:
+        try:
+            index = test_list.index(args.startcase)
+            test_list = test_list[index:]
+        except ValueError:
+            print(f"Could not find startcase `{args.startcase}`")
+            sys.exit(1)
+
     if not test_list:
         print("No valid test scripts specified. Check that your test is in one "
               "of the test lists in test_runner.py, or run test_runner.py with no arguments to run all tests")
@@ -603,6 +620,18 @@ def run_tests(*, test_list, build_dir, tmpdir, jobs=1, enable_coverage=False, ar
     except OSError:
         # pgrep not supported
         pass
+
+    utocoin_cli = "%s/bin/utocoin-cli" % build_dir
+    result = subprocess.run(
+        [utocoin_cli, "-chain=regtest", "-powhash"],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+
+    if result.stdout.strip() == "scrypt" or result.stderr.strip() == "scrypt":
+        print("%sINFO!%s Now use scrypt as pow hash" % (BOLD[1], BOLD[0]))
+        os.environ["USE_SCRYPT"] = "1"
 
     # Warn if there is a cache directory
     cache_dir = "%s/test/cache" % build_dir

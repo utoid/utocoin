@@ -243,14 +243,15 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
             rawtxs=[tx.serialize().hex()],
         )
 
-        self.log.info('A transaction with too large sum of output values')
-        tx = tx_from_hex(raw_tx_reference)
-        tx.vout = [tx.vout[0]] * 2
-        tx.vout[0].nValue = MAX_MONEY
-        self.check_mempool_result(
-            result_expected=[{'txid': tx.rehash(), 'allowed': False, 'reject-reason': 'bad-txns-txouttotal-toolarge'}],
-            rawtxs=[tx.serialize().hex()],
-        )
+# ignore this case because there's no MAX_MONEY
+        # self.log.info('A transaction with too large sum of output values')
+        # tx = tx_from_hex(raw_tx_reference)
+        # tx.vout = [tx.vout[0]] * 2
+        # tx.vout[0].nValue = MAX_MONEY
+        # self.check_mempool_result(
+        #     result_expected=[{'txid': tx.rehash(), 'allowed': False, 'reject-reason': 'bad-txns-txouttotal-toolarge'}],
+        #     rawtxs=[tx.serialize().hex()],
+        # )
 
         self.log.info('A transaction with duplicate inputs')
         tx = tx_from_hex(raw_tx_reference)

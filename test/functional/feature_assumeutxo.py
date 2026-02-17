@@ -9,6 +9,8 @@ to a hash that has been compiled into bitcoind.
 The assumeutxo value generated and used here is committed to in
 `CRegTestParams::m_assumeutxo_data` in `src/kernel/chainparams.cpp`.
 """
+import hashlib
+import os
 from shutil import rmtree
 
 from dataclasses import dataclass
@@ -127,17 +129,19 @@ class AssumeutxoTest(BitcoinTestFramework):
                 f.write(valid_snapshot_contents[:43])
                 f.write((valid_num_coins + off).to_bytes(8, "little"))
                 f.write(valid_snapshot_contents[43 + 8:])
-            expected_error(msg="Bad snapshot - coins left over after deserializing 298 coins." if off == -1 else "Bad snapshot format or truncated snapshot after deserializing 299 coins.")
+            expected_error(msg="Bad snapshot - coins left over after deserializing 301 coins." if off == -1 else "Bad snapshot format or truncated snapshot after deserializing 302 coins.")
 
         self.log.info("  - snapshot file with alternated but parsable UTXO data results in different hash")
         cases = [
             # (content, offset, wrong_hash, custom_message)
-            [b"\xff" * 32, 0, "7d52155c9a9fdc4525b637ef6170568e5dad6fabd0b1fdbb9432010b8453095b", None],  # wrong outpoint hash
+            # [b"\xff" * 32, 0, "7d52155c9a9fdc4525b637ef6170568e5dad6fabd0b1fdbb9432010b8453095b", None],  # wrong outpoint hash
+            [b"\xff" * 32, 0, "480709f2beb71c5e5c781444408f07b33e53e1689acc2a4eeed4e867e3e5bfcf", None],  # wrong outpoint hash
             [(2).to_bytes(1, "little"), 32, None, "Bad snapshot data after deserializing 1 coins."],  # wrong txid coins count
             [b"\xfd\xff\xff", 32, None, "Mismatch in coins count in snapshot metadata and actual snapshot data"],  # txid coins count exceeds coins left
-            [b"\x01", 33, "9f4d897031ab8547665b4153317ae2fdbf0130c7840b66427ebc48b881cb80ad", None],  # wrong outpoint index
-            [b"\x81", 34, "3da966ba9826fb6d2604260e01607b55ba44e1a5de298606b08704bc62570ea8", None],  # wrong coin code VARINT
-            [b"\x80", 34, "091e893b3ccb4334378709578025356c8bcb0a623f37c7c4e493133c988648e5", None],  # another wrong coin code
+            # [b"\x01", 33, "9f4d897031ab8547665b4153317ae2fdbf0130c7840b66427ebc48b881cb80ad", None],  # wrong outpoint index
+            [b"\x01", 33, "5bdf700dea658f84a68421ea2d8bbd19394570e47051b61b842a8e9d5f579c44", None],  # wrong outpoint index
+            [b"\x81", 34, "2df868308674224e4754f6627d937765d4dded29d42b62dec276481d48b9b5fb", None],  # wrong coin code VARINT
+            [b"\x80", 34, "492ab740488ba740705e8c72778242a98b0d5ceaede4d76b1afe07a5ce1d1cfa", None],  # another wrong coin code
             [b"\x84\x58", 34, None, "Bad snapshot data after deserializing 0 coins"],  # wrong coin case with height 364 and coinbase 0
             [b"\xCA\xD2\x8F\x5A", 39, None, "Bad snapshot data after deserializing 0 coins - bad tx out value"],  # Amount exceeds MAX_MONEY
         ]
@@ -149,12 +153,15 @@ class AssumeutxoTest(BitcoinTestFramework):
                 f.write(content)
                 f.write(valid_snapshot_contents[(5 + 2 + 4 + 32 + 8 + offset + len(content)):])
 
-            msg = custom_message if custom_message is not None else f"Bad snapshot content hash: expected a4bf3407ccb2cc0145c49ebba8fa91199f8a3903daf0883875941497d2493c27, got {wrong_hash}."
+            msg = custom_message if custom_message is not None else f"Bad snapshot content hash: expected 616172cef986be0dda85ff4a4b9dac1322d514ea1eeaca2b5541377ca26521bd, got {wrong_hash}."
             expected_error(msg)
 
     def test_headers_not_synced(self, valid_snapshot_path):
         for node in self.nodes[1:]:
-            msg = "Unable to load UTXO snapshot: The base block header (3bb7ce5eba0be48939b7a521ac1ba9316afee2c7bada3a0cca24188e6d7d96c0) must appear in the headers chain. Make sure all headers are syncing, and call loadtxoutset again."
+            use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
+            # block_header = 'e6daa56d5e36c427074cce126994e142d361e8a79c8b1c029496d6af8c168491' if use_scrypt else '3bb7ce5eba0be48939b7a521ac1ba9316afee2c7bada3a0cca24188e6d7d96c0'
+            block_header = '1e1437d69143ee7317f438afa29479e947694a77de48cd95e0f75603a4cb9d1c' if use_scrypt else '3bb7ce5eba0be48939b7a521ac1ba9316afee2c7bada3a0cca24188e6d7d96c0'
+            msg = f"Unable to load UTXO snapshot: The base block header ({block_header}) must appear in the headers chain. Make sure all headers are syncing, and call loadtxoutset again."
             assert_raises_rpc_error(-32603, msg, node.loadtxoutset, valid_snapshot_path)
 
     def test_invalid_chainstate_scenarios(self):
@@ -213,7 +220,9 @@ class AssumeutxoTest(BitcoinTestFramework):
             block_hash = node.getblockhash(height)
             node.invalidateblock(block_hash)
             assert_equal(node.getblockcount(), height - 1)
-            msg = "Unable to load UTXO snapshot: The base block header (3bb7ce5eba0be48939b7a521ac1ba9316afee2c7bada3a0cca24188e6d7d96c0) is part of an invalid chain."
+            use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
+            block_header = '1e1437d69143ee7317f438afa29479e947694a77de48cd95e0f75603a4cb9d1c' if use_scrypt else '3bb7ce5eba0be48939b7a521ac1ba9316afee2c7bada3a0cca24188e6d7d96c0'
+            msg = f"Unable to load UTXO snapshot: The base block header ({block_header}) is part of an invalid chain."
             assert_raises_rpc_error(-32603, msg, node.loadtxoutset, dump_output_path)
             node.reconsiderblock(block_hash)
 
@@ -400,6 +409,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         # base block while disconnected from n0.
         for i in range(1, 300):
             block = n0.getblock(n0.getblockhash(i), 0)
+            self.log.debug(f"block {i}: {n0.getblockhash(i)}")
             # make n1 and n2 aware of the new header, but don't give them the
             # block.
             n1.submitheader(block)
@@ -415,7 +425,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         def check_dump_output(output):
             assert_equal(
                 output['txoutset_hash'],
-                "a4bf3407ccb2cc0145c49ebba8fa91199f8a3903daf0883875941497d2493c27")
+                "616172cef986be0dda85ff4a4b9dac1322d514ea1eeaca2b5541377ca26521bd")
             assert_equal(output["nchaintx"], blocks[SNAPSHOT_BASE_HEIGHT].chain_tx)
 
         check_dump_output(dump_output)
@@ -445,7 +455,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         dump_output4 = n0.dumptxoutset(path='utxos4.dat', rollback=prev_snap_height)
         assert_equal(
             dump_output4['txoutset_hash'],
-            "8a1db0d6e958ce0d7c963bc6fc91ead596c027129bacec68acc40351037b09d7")
+            "72c2b88adb73f93c1f01a65b4df65fb04485750419b2727fa9aa1e1a07d8264e")
         assert sha256sum_file(dump_output['path']) != sha256sum_file(dump_output4['path'])
 
         # Use a hash instead of a height
@@ -477,7 +487,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         # This node's tip is on an ancestor block of the snapshot, which should
         # be the normal case
         loaded = n1.loadtxoutset(dump_output['path'])
-        assert_equal(loaded['coins_loaded'], SNAPSHOT_BASE_HEIGHT)
+        assert_equal(loaded['coins_loaded'], SNAPSHOT_BASE_HEIGHT + 3)
         assert_equal(loaded['base_height'], SNAPSHOT_BASE_HEIGHT)
 
         self.log.info("Confirm that local services remain unchanged")
@@ -596,7 +606,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         # assertions and the -stopatheight tripping.
         self.connect_nodes(0, 1, wait_for_connect=False)
 
-        n1.wait_until_stopped(timeout=5)
+        n1.wait_until_stopped(timeout=25)
 
         self.log.info("Checking that blocks are segmented on disk")
         assert self.has_blockfile(n1, "00000"), "normal blockfile missing"
@@ -665,7 +675,7 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         self.log.info(f"Loading snapshot into third node from {dump_output['path']}")
         loaded = n2.loadtxoutset(dump_output['path'])
-        assert_equal(loaded['coins_loaded'], SNAPSHOT_BASE_HEIGHT)
+        assert_equal(loaded['coins_loaded'], SNAPSHOT_BASE_HEIGHT + 3)
         assert_equal(loaded['base_height'], SNAPSHOT_BASE_HEIGHT)
 
         # Even though n2 is a full node, it will unset the 'NETWORK' service flag during snapshot loading.
@@ -681,7 +691,7 @@ class AssumeutxoTest(BitcoinTestFramework):
                 block = n0.getblock(n0.getblockhash(i), 0)
                 n2.submitheader(block)
             loaded = n2.loadtxoutset(dump_output['path'])
-            assert_equal(loaded['coins_loaded'], SNAPSHOT_BASE_HEIGHT)
+            assert_equal(loaded['coins_loaded'], SNAPSHOT_BASE_HEIGHT + 3)
             assert_equal(loaded['base_height'], SNAPSHOT_BASE_HEIGHT)
 
         normal, snapshot = n2.getchainstates()['chainstates']

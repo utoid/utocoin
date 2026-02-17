@@ -15,6 +15,7 @@ from test_framework.util import (
 )
 import json
 import os
+import re
 
 TESTSDIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -24,6 +25,7 @@ class GetblockstatsTest(BitcoinTestFramework):
     max_stat_pos = 2
 
     def add_options(self, parser):
+        self.add_wallet_options(parser)
         parser.add_argument('--gen-test-data', dest='gen_test_data',
                             default=False, action='store_true',
                             help='Generate test data')
@@ -36,6 +38,7 @@ class GetblockstatsTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.setup_clean_chain = True
         self.supports_cli = False
+        self.use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
 
     def get_stats(self):
         return [self.nodes[0].getblockstats(hash_or_height=self.start_height + i) for i in range(self.max_stat_pos+1)]
@@ -95,9 +98,15 @@ class GetblockstatsTest(BitcoinTestFramework):
         for b in blocks:
             self.nodes[0].submitblock(b)
 
+    def get_test_data_file(self):
+        hash256_file = os.path.join(TESTSDIR, self.options.test_data)
+        if not self.use_scrypt:
+            return hash256_file
+        scrypt_file = re.sub(r'\.json$', r'_scrypt.json', hash256_file)
+        return scrypt_file
 
     def run_test(self):
-        test_data = os.path.join(TESTSDIR, self.options.test_data)
+        test_data = self.get_test_data_file()
         if self.options.gen_test_data:
             self.generate_test_data(test_data)
         else:
@@ -169,18 +178,19 @@ class GetblockstatsTest(BitcoinTestFramework):
 
         self.log.info('Test block height 0')
         genesis_stats = self.nodes[0].getblockstats(0)
-        assert_equal(genesis_stats["blockhash"], "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
-        assert_equal(genesis_stats["utxo_increase"], 1)
-        assert_equal(genesis_stats["utxo_size_inc"], 117)
+        use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
+        assert_equal(genesis_stats["blockhash"], "7c689a1b2cdee9b1c2e79e08ba2414bb6e0f611c505a677917fc6b4b61aab4cd" if use_scrypt else "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
+        assert_equal(genesis_stats["utxo_increase"], 3 if use_scrypt else 1)
+        assert_equal(genesis_stats["utxo_size_inc"], 178 if use_scrypt else 117)
         assert_equal(genesis_stats["utxo_increase_actual"], 0)
         assert_equal(genesis_stats["utxo_size_inc_actual"], 0)
 
         self.log.info('Test tip including OP_RETURN')
         tip_stats = self.nodes[0].getblockstats(tip)
         assert_equal(tip_stats["utxo_increase"], 6)
-        assert_equal(tip_stats["utxo_size_inc"], 441)
+        assert_equal(tip_stats["utxo_size_inc"], 450 if use_scrypt else 441)
         assert_equal(tip_stats["utxo_increase_actual"], 4)
-        assert_equal(tip_stats["utxo_size_inc_actual"], 300)
+        assert_equal(tip_stats["utxo_size_inc_actual"], 309 if use_scrypt else 300)
 
         self.log.info("Test when only header is known")
         block = self.generateblock(self.nodes[0], output="raw(55)", transactions=[], submit=False)

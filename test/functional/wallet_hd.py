@@ -21,7 +21,10 @@ class WalletHDTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
-        self.extra_args = [[], ['-keypool=0']]
+        self.extra_args = [
+            ['-txindex=0'],
+            ['-keypool=0', '-txindex=0'],
+        ]
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
 

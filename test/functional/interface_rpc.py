@@ -117,10 +117,11 @@ class RPCInterfaceTest(BitcoinTestFramework):
             # Invalid request format
             {"pizza": "sausage"}
         ]
+        use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
         results = [
             {"result": 0},
             {"error": {"code": RPC_METHOD_NOT_FOUND, "message": "Method not found"}},
-            {"result": "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"},
+            {"result": "7c689a1b2cdee9b1c2e79e08ba2414bb6e0f611c505a677917fc6b4b61aab4cd" if use_scrypt else "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"},
             {"error": {"code": RPC_INVALID_REQUEST, "message": "Missing method"}},
         ]
 

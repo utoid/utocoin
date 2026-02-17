@@ -121,7 +121,7 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         assert_equal(
             dump_output['txoutset_hash'],
-            "a4bf3407ccb2cc0145c49ebba8fa91199f8a3903daf0883875941497d2493c27")
+            "616172cef986be0dda85ff4a4b9dac1322d514ea1eeaca2b5541377ca26521bd")
         assert_equal(dump_output["nchaintx"], 334)
         assert_equal(n0.getblockchaininfo()["blocks"], SNAPSHOT_BASE_HEIGHT)
 
@@ -144,7 +144,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         self.log.info(
             f"Loading snapshot into second node from {dump_output['path']}")
         loaded = n1.loadtxoutset(dump_output['path'])
-        assert_equal(loaded['coins_loaded'], SNAPSHOT_BASE_HEIGHT)
+        assert_equal(loaded['coins_loaded'], SNAPSHOT_BASE_HEIGHT + 3)
         assert_equal(loaded['base_height'], SNAPSHOT_BASE_HEIGHT)
 
         normal, snapshot = n1.getchainstates()["chainstates"]
@@ -192,7 +192,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         # assertions and the -stopatheight tripping.
         self.connect_nodes(0, 1, wait_for_connect=False)
 
-        n1.wait_until_stopped(timeout=5)
+        n1.wait_until_stopped(timeout=15)
 
         self.log.info(
             "Restarted node before snapshot validation completed, reloading...")

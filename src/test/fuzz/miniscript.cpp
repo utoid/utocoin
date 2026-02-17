@@ -299,17 +299,17 @@ const struct CheckerContext: BaseSignatureChecker {
     }
     bool CheckLockTime(const CScriptNum& nLockTime) const override { return nLockTime.GetInt64() & 1; }
     bool CheckSequence(const CScriptNum& nSequence) const override { return nSequence.GetInt64() & 1; }
-} CHECKER_CTX;
+} CHECKER_CTX{};
 
 //! Context to check for duplicates when instancing a Node.
 const struct KeyComparator {
     bool KeyCompare(const CPubKey& a, const CPubKey& b) const {
         return a < b;
     }
-} KEY_COMP;
+} KEY_COMP{};
 
 // A dummy scriptsig to pass to VerifyScript (we always use Segwit v0).
-const CScript DUMMY_SCRIPTSIG;
+const CScript DUMMY_SCRIPTSIG{};
 
 //! Construct a miniscript node as a shared_ptr.
 template<typename... Args> NodeRef MakeNodeRef(Args&&... args) {

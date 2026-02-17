@@ -210,16 +210,16 @@ class CreateTooLarge(BadTxTemplate):
     def get_tx(self):
         return create_tx_with_script(self.spend_tx, 0, amount=MAX_MONEY + 1)
 
-
-class CreateSumTooLarge(BadTxTemplate):
-    reject_reason = 'bad-txns-txouttotal-toolarge'
-    expect_disconnect = True
-
-    def get_tx(self):
-        tx = create_tx_with_script(self.spend_tx, 0, amount=MAX_MONEY)
-        tx.vout = [tx.vout[0]] * 2
-        tx.calc_sha256()
-        return tx
+# ignore this case because NO MAX_MONEY
+# class CreateSumTooLarge(BadTxTemplate):
+#     reject_reason = 'bad-txns-txouttotal-toolarge'
+#     expect_disconnect = True
+#
+#     def get_tx(self):
+#         tx = create_tx_with_script(self.spend_tx, 0, amount=MAX_MONEY)
+#         tx.vout = [tx.vout[0]] * 2
+#         tx.calc_sha256()
+#         return tx
 
 
 class InvalidOPIFConstruction(BadTxTemplate):

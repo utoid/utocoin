@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test that we reject low difficulty headers to prevent our block tree from filling up with useless bloat"""
 
+import os
 from test_framework.test_framework import BitcoinTestFramework
 
 from test_framework.p2p import (
@@ -28,6 +29,9 @@ NODE2_BLOCKS_REQUIRED = 2047
 
 
 class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
+    def skip_test_if_missing_module(self):
+        self.skip_if_use_scrypt()
+
     def set_test_params(self):
         self.rpc_timeout *= 4  # To avoid timeout when generating BLOCKS_TO_MINE
         self.setup_clean_chain = True
@@ -76,10 +80,11 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
 
         for node in self.nodes[1:3]:
             chaintips = node.getchaintips()
+            use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
             assert len(chaintips) == 1
             assert {
                 'height': 0,
-                'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
+                'hash': "7c689a1b2cdee9b1c2e79e08ba2414bb6e0f611c505a677917fc6b4b61aab4cd" if use_scrypt else "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
                 'branchlen': 0,
                 'status': 'active',
             } in chaintips
@@ -89,9 +94,10 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
             self.generate(self.nodes[0], NODE1_BLOCKS_REQUIRED - self.nodes[0].getblockcount(), sync_fun=self.no_op)
         self.sync_blocks(self.nodes[0:2]) # node3 will sync headers (noban permissions) but not blocks (due to minchainwork)
 
+        use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
         assert {
             'height': 0,
-            'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
+            'hash': "7c689a1b2cdee9b1c2e79e08ba2414bb6e0f611c505a677917fc6b4b61aab4cd" if use_scrypt else "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
             'branchlen': 0,
             'status': 'active',
         } in self.nodes[2].getchaintips()

@@ -118,6 +118,7 @@ target_link_libraries(bitcoin_consensus
     core_interface
     bitcoin_crypto
     secp256k1
+    utocoin_consensus
 )
 
 if(WITH_ZMQ)
@@ -192,29 +193,31 @@ target_link_libraries(bitcoin_common
 
 include(InstallBinaryComponent)
 
+add_subdirectory(utocoin)
+
 if(ENABLE_WALLET)
   add_subdirectory(wallet)
 
   if(BUILD_WALLET_TOOL)
-    add_executable(bitcoin-wallet
+    add_executable(utocoin-wallet
       bitcoin-wallet.cpp
       init/bitcoin-wallet.cpp
       wallet/wallettool.cpp
     )
-    add_windows_resources(bitcoin-wallet bitcoin-wallet-res.rc)
-    target_link_libraries(bitcoin-wallet
+    add_windows_resources(utocoin-wallet bitcoin-wallet-res.rc)
+    target_link_libraries(utocoin-wallet
       core_interface
-      bitcoin_wallet
+      utocoin_wallet
       bitcoin_common
       bitcoin_util
       Boost::headers
     )
-    install_binary_component(bitcoin-wallet HAS_MANPAGE)
+    install_binary_component(utocoin-wallet HAS_MANPAGE)
   endif()
 endif()
 
 
-# P2P and RPC server functionality used by `bitcoind` and `bitcoin-qt` executables.
+# P2P and RPC server functionality used by `utocoind` and `bitcoin-qt` executables.
 add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   addrdb.cpp
   addrman.cpp
@@ -307,8 +310,8 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   validation.cpp
   validationinterface.cpp
   versionbits.cpp
-  $<$<TARGET_EXISTS:bitcoin_wallet>:wallet/init.cpp>
-  $<$<NOT:$<TARGET_EXISTS:bitcoin_wallet>>:dummywallet.cpp>
+  $<$<TARGET_EXISTS:utocoin_wallet>:wallet/init.cpp>
+  $<$<NOT:$<TARGET_EXISTS:utocoin_wallet>>:dummywallet.cpp>
 )
 target_link_libraries(bitcoin_node
   PRIVATE
@@ -319,6 +322,7 @@ target_link_libraries(bitcoin_node
     leveldb
     minisketch
     univalue
+    utocoin_node
     Boost::headers
     $<TARGET_NAME_IF_EXISTS:libevent::core>
     $<TARGET_NAME_IF_EXISTS:libevent::extra>
@@ -327,19 +331,19 @@ target_link_libraries(bitcoin_node
 )
 
 
-# Bitcoin Core bitcoind.
+# Bitcoin Core utocoind.
 if(BUILD_DAEMON)
-  add_executable(bitcoind
+  add_executable(utocoind
     bitcoind.cpp
     init/bitcoind.cpp
   )
-  add_windows_resources(bitcoind bitcoind-res.rc)
-  target_link_libraries(bitcoind
+  add_windows_resources(utocoind bitcoind-res.rc)
+  target_link_libraries(utocoind
     core_interface
     bitcoin_node
-    $<TARGET_NAME_IF_EXISTS:bitcoin_wallet>
+    $<TARGET_NAME_IF_EXISTS:utocoin_wallet>
   )
-  install_binary_component(bitcoind HAS_MANPAGE)
+  install_binary_component(utocoind HAS_MANPAGE)
 endif()
 if(WITH_MULTIPROCESS AND BUILD_DAEMON)
   add_executable(bitcoin-node
@@ -350,7 +354,7 @@ if(WITH_MULTIPROCESS AND BUILD_DAEMON)
     core_interface
     bitcoin_node
     bitcoin_ipc
-    $<TARGET_NAME_IF_EXISTS:bitcoin_wallet>
+    $<TARGET_NAME_IF_EXISTS:utocoin_wallet>
   )
   install_binary_component(bitcoin-node)
 endif()
@@ -385,9 +389,9 @@ target_link_libraries(bitcoin_cli
 
 # Bitcoin Core RPC client
 if(BUILD_CLI)
-  add_executable(bitcoin-cli bitcoin-cli.cpp)
-  add_windows_resources(bitcoin-cli bitcoin-cli-res.rc)
-  target_link_libraries(bitcoin-cli
+  add_executable(utocoin-cli bitcoin-cli.cpp)
+  add_windows_resources(utocoin-cli bitcoin-cli-res.rc)
+  target_link_libraries(utocoin-cli
     core_interface
     bitcoin_cli
     bitcoin_common
@@ -395,32 +399,32 @@ if(BUILD_CLI)
     libevent::core
     libevent::extra
   )
-  install_binary_component(bitcoin-cli HAS_MANPAGE)
+  install_binary_component(utocoin-cli HAS_MANPAGE)
 endif()
 
 
 if(BUILD_TX)
-  add_executable(bitcoin-tx bitcoin-tx.cpp)
-  add_windows_resources(bitcoin-tx bitcoin-tx-res.rc)
-  target_link_libraries(bitcoin-tx
+  add_executable(utocoin-tx bitcoin-tx.cpp)
+  add_windows_resources(utocoin-tx bitcoin-tx-res.rc)
+  target_link_libraries(utocoin-tx
     core_interface
     bitcoin_common
     bitcoin_util
     univalue
   )
-  install_binary_component(bitcoin-tx HAS_MANPAGE)
+  install_binary_component(utocoin-tx HAS_MANPAGE)
 endif()
 
 
 if(BUILD_UTIL)
-  add_executable(bitcoin-util bitcoin-util.cpp)
-  add_windows_resources(bitcoin-util bitcoin-util-res.rc)
-  target_link_libraries(bitcoin-util
+  add_executable(utocoin-util bitcoin-util.cpp)
+  add_windows_resources(utocoin-util bitcoin-util-res.rc)
+  target_link_libraries(utocoin-util
     core_interface
     bitcoin_common
     bitcoin_util
   )
-  install_binary_component(bitcoin-util HAS_MANPAGE)
+  install_binary_component(utocoin-util HAS_MANPAGE)
 endif()
 
 

@@ -11,6 +11,10 @@
 #include <pubkey.h>
 #include <script/script.h>
 #include <uint256.h>
+#include <utocoin/stake_promise.h>
+#include <utocoin/script/signer_pickup_checker.h>
+#include <utocoin/script/transaction_getter.h>
+#include <ranges>
 
 typedef std::vector<unsigned char> valtype;
 
@@ -403,6 +407,138 @@ static bool EvalChecksig(const valtype& sig, const valtype& pubkey, CScript::con
     assert(false);
 }
 
+
+static bool anchorBelongPubkey(const CKeyID &anchor, valtype vchPubKey)
+{
+    std::vector<CKeyID> keyIDs;
+    XOnlyPubKey xPubKey;
+    if (vchPubKey.size() == 33) {               // compressed pubkey
+        xPubKey = XOnlyPubKey{CPubKey(vchPubKey)};
+    } else if (vchPubKey.size() == 32 ) {       // xonly pubkey
+        xPubKey = XOnlyPubKey{vchPubKey};
+    } else {
+        return false;
+    }
+    keyIDs = xPubKey.GetKeyIDs();
+    keyIDs.emplace_back(CKeyID{Hash160(xPubKey)});
+    return std::ranges::find(keyIDs, anchor) != keyIDs.end();
+}
+
+static bool anchorBelongPubkey(const uint160 &anchor, valtype vchPubKey)
+{
+    return anchorBelongPubkey(CKeyID{anchor}, vchPubKey);
+}
+
+static bool anchorBelongPubkey(const valtype &anchor, valtype vchPubKey)
+{
+    if (anchor.size() != 20) {
+        return false;
+    }
+    return anchorBelongPubkey(uint160{Span{anchor}}, vchPubKey);
+}
+
+// check burn condition
+// initial stack: <spent_txid> <promise> <victim_sig> <victim_pubkey> <promise_anchor>
+// final stack: <bool>
+// return: true if burn condition is met, false otherwise
+bool CheckStakeBurn(const std::vector<valtype>& stack, CScript::const_iterator pbegincodehash, CScript::const_iterator pend, ScriptExecutionData& execdata, const BaseSignatureChecker& checker, int flags, SigVersion sigversion, ScriptError* serror)
+{
+    // checking stack size and content
+    
+    // check redeem key
+    if (stacktop(-1).size() != 20 ||
+        (stacktop(-2).size() != 32 && stacktop(-2).size() != 33) ||
+        (stacktop(-3).size() > 1 && stacktop(-3).size() < 64) ||    // the size of dummy sig is 0 or 1, otherwise the sig lenght should large or equal than 64
+        stacktop(-4).empty() ||
+        stacktop(-5).size() != 32) {
+        return set_error(serror, SCRIPT_ERR_STAKEBURN);
+    }
+
+    CTransactionRef tx = checker.VerifingTransaction();
+    // ** Check stakeburn only have one input and two outputs
+    if (tx->vin.size() != 1)  return set_error(serror, SCRIPT_ERR_STAKEBURN);
+
+    // ** Check the burned value great or equal than stake burn ratio in consensus
+    CAmount totalInputValue = checker.GetAmount();
+    CAmount burnedValue = 0;
+    for (const auto &out : tx->vout) {
+        if (out.scriptPubKey.IsUnspendable()) burnedValue += out.nValue;
+    }
+    if (burnedValue < checker.GetParams().nStakeBurnRatio * totalInputValue / 10000) return set_error(serror, SCRIPT_ERR_STAKEBURN);
+
+    uint160 promiseAnchor(stacktop(-1));
+    valtype vchPubKey = stacktop(-2);
+    valtype vchSig = stacktop(-3);
+    valtype vchPromise = stacktop(-4);
+    uint256 hashTxSpent(stacktop(-5));
+
+    // verify promise
+    ::utocoin::CStakePromise promise;
+
+    try {
+        promise.Deserialize(vchPromise);
+
+        // ** Check that the creator of the tx is the payee in the promise
+        if (!anchorBelongPubkey(promise.m_payee_anchor, vchPubKey)) return set_error(serror, SCRIPT_ERR_STAKEBURN);
+
+        // ** Check that the maker of the promise is the owner of the stake
+        if (!anchorBelongPubkey(promiseAnchor, promise.m_pubkey)) return set_error(serror, SCRIPT_ERR_STAKEBURN);
+
+        // ** Check that the promise is signed correctly
+        if( !promise.Verify<CPubKey>() ) return set_error(serror, SCRIPT_ERR_STAKEBURN);
+
+        // ** Check if the vin being burned is the stakeutxo in the promise
+        if (checker.VerifyingPrevout() != promise.m_stakeutxo) return set_error(serror, SCRIPT_ERR_STAKEBURN);
+
+    } catch (const std::exception&) {
+        // any exception means the promise is invalid
+        return set_error(serror, SCRIPT_ERR_STAKEBURN);
+    }
+
+    // ** Check the victim signature
+    bool fSuccess;
+    if (!EvalChecksig(vchSig, vchPubKey, pbegincodehash, pend, execdata, flags, checker, sigversion, serror, fSuccess)) return false;
+    if (!fSuccess) return set_error(serror, SCRIPT_ERR_CHECKSIGVERIFY);
+
+    // get txSpent(the bad spent)
+    CTransactionRef txSpent, txUtxo;
+    if ( txSpent = ::utocoin::script::CTransactionGetter::Instance().GetTransaction(hashTxSpent); !txSpent) return set_error(serror, SCRIPT_ERR_STAKEBURN);
+
+    // ** Check that the vin be spent is the utxo in the promise
+    CTxIn vinSpent;
+    if (auto it = std::ranges::find_if(txSpent->vin, [&](const CTxIn &input) {
+        return input.prevout == promise.m_utxo;
+    }); it != txSpent->vin.end()) {
+        vinSpent = *it;
+    } else {
+        return set_error(serror, SCRIPT_ERR_STAKEBURN);
+    }
+
+    // get txUtxo
+    if (txUtxo = ::utocoin::script::CTransactionGetter::Instance().GetTransaction(vinSpent.prevout.hash); !txUtxo) return set_error(serror, SCRIPT_ERR_STAKEBURN);
+    if (txUtxo->vout.size() <= vinSpent.prevout.n) return set_error(serror, SCRIPT_ERR_STAKEBURN);
+    CScript utxoScriptPubKey = txUtxo->vout[vinSpent.prevout.n].scriptPubKey;
+
+    // **** pickup the last signer of the spent tx
+    ::utocoin::script::CSignerPickupChecker checkerPicker;
+    VerifyScript(vinSpent.scriptSig, utxoScriptPubKey, &vinSpent.scriptWitness, flags, checkerPicker, serror);
+
+    if (checkerPicker.m_signers.size() == 0) return set_error(serror, SCRIPT_ERR_STAKEBURN);
+    std::vector<unsigned char> lastSinger = checkerPicker.m_signers.back();
+
+    // signer pubkey must be compressed
+    if (lastSinger.size() != 32 && lastSinger.size() != 33) return set_error(serror, SCRIPT_ERR_PUBKEYTYPE);
+
+    // ** Check if the promise.payee_anchor belong the last signer
+    // ***************************************************************
+    // ** Final check, if this check passes, the burn is successful **
+    // ***************************************************************
+    if (anchorBelongPubkey(promise.m_payee_anchor, lastSinger)) return set_error(serror, SCRIPT_ERR_STAKEBURN);
+
+    return set_success(serror);
+}
+
+
 bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptExecutionData& execdata, ScriptError* serror)
 {
     static const CScriptNum bnZero(0);
@@ -591,8 +727,8 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     break;
                 }
 
-                case OP_NOP1: case OP_NOP4: case OP_NOP5:
-                case OP_NOP6: case OP_NOP7: case OP_NOP8: case OP_NOP9: case OP_NOP10:
+                case OP_NOP1:
+                case OP_NOP7: case OP_NOP8: case OP_NOP9: case OP_NOP10:
                 {
                     if (flags & SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS)
                         return set_error(serror, SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS);
@@ -1077,6 +1213,50 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         else
                             return set_error(serror, SCRIPT_ERR_CHECKSIGVERIFY);
                     }
+                }
+                break;
+
+                case OP_CHECKDATSIG:
+                case OP_CHECKDATSIGVERIFY: {
+                    // (sig data pubkey -- data bool)
+                    if (stack.size() < 3)
+                        return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
+
+                    valtype& vchSig = stacktop(-3);
+                    valtype vchDat = stacktop(-2);
+                    valtype& vchPubKey = stacktop(-1);
+
+                    bool fSuccess = true;
+
+                    if ( !checker.WithSighashBlender(vchDat, [&] {
+                        return EvalChecksig(vchSig, vchPubKey, pbegincodehash, pend, execdata, flags, checker, sigversion, serror, fSuccess);
+                    }) ) return  false;
+
+                    popstack(stack);
+                    popstack(stack);
+                    popstack(stack);
+                    stack.push_back(vchDat);
+                    stack.push_back(fSuccess ? vchTrue : vchFalse);
+
+                    if (opcode == OP_CHECKDATSIGVERIFY)
+                    {
+                        if (fSuccess)
+                            popstack(stack);
+                        else
+                            return set_error(serror, SCRIPT_ERR_CHECKDATSIGVERIFY);
+                    }
+                }
+                break;
+
+                case OP_STAKEBURN: {
+                    if (stack.size() < 5) {
+                        return set_error(serror, SCRIPT_ERR_STACK_SIZE);
+                    }
+                    // initial stack: <spent_txid> <promise> <victim_sig> <victim_pubkey> <promise_anchor>
+                    bool valid = CheckStakeBurn(stack, pbegincodehash, pend, execdata, checker, flags, sigversion, serror);
+                    stack.erase(stack.end() - 5, stack.end());
+                    stack.push_back(valid ? vchTrue : vchFalse);
+                    
                 }
                 break;
 
@@ -1662,7 +1842,7 @@ bool GenericTransactionSignatureChecker<T>::CheckECDSASignature(const std::vecto
     if (sigversion == SigVersion::WITNESS_V0 && amount < 0) return HandleMissingData(m_mdb);
 
     uint256 sighash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, sigversion, this->txdata);
-
+    SighashBlender(sighash);
     if (!VerifyECDSASignature(vchSig, pubkey, sighash))
         return false;
 
@@ -1693,6 +1873,7 @@ bool GenericTransactionSignatureChecker<T>::CheckSchnorrSignature(Span<const uns
     if (!SignatureHashSchnorr(sighash, execdata, *txTo, nIn, hashtype, sigversion, *this->txdata, m_mdb)) {
         return set_error(serror, SCRIPT_ERR_SCHNORR_SIG_HASHTYPE);
     }
+    SighashBlender(sighash);
     if (!VerifySchnorrSignature(sig, pubkey, sighash)) return set_error(serror, SCRIPT_ERR_SCHNORR_SIG);
     return true;
 }

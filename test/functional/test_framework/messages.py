@@ -27,6 +27,7 @@ import random
 import socket
 import time
 import unittest
+import os
 
 from test_framework.crypto.siphash import siphash256
 from test_framework.util import assert_equal
@@ -39,7 +40,7 @@ MAX_BLOOM_FILTER_SIZE = 36000
 MAX_BLOOM_HASH_FUNCS = 50
 
 COIN = 100000000  # 1 btc in satoshis
-MAX_MONEY = 21000000 * COIN
+MAX_MONEY = 2100000000 * COIN
 
 MAX_BIP125_RBF_SEQUENCE = 0xfffffffd  # Sequence number that is rbf-opt-in (BIP 125) and csv-opt-out (BIP 68)
 SEQUENCE_FINAL = 0xffffffff  # Sequence number that disables nLockTime if set for every input of a tx
@@ -95,6 +96,8 @@ def sha3(s):
 def hash256(s):
     return sha256(sha256(s))
 
+def scrypt(s):
+    return hashlib.scrypt(s, salt=s, n=2**15, r=1, p=1, dklen=32)
 
 def ser_compact_size(l):
     r = b""
@@ -140,6 +143,8 @@ def ser_uint256(u):
 def uint256_from_str(s):
     return int.from_bytes(s[:32], 'little')
 
+def uint256_to_str(i: int) -> bytes:
+    return i.to_bytes(32, 'little')
 
 def uint256_from_compact(c):
     nbytes = (c >> 24) & 0xFF
@@ -664,7 +669,7 @@ class CTransaction:
     def is_valid(self):
         self.calc_sha256()
         for tout in self.vout:
-            if tout.nValue < 0 or tout.nValue > 21000000 * COIN:
+            if tout.nValue < 0 or tout.nValue > 2100000000 * COIN:
                 return False
         return True
 
@@ -685,7 +690,7 @@ class CTransaction:
 
 class CBlockHeader:
     __slots__ = ("hash", "hashMerkleRoot", "hashPrevBlock", "nBits", "nNonce",
-                 "nTime", "nVersion", "sha256")
+                 "nTime", "nVersion", "sha256", "scrypthash")
 
     def __init__(self, header=None):
         if header is None:
@@ -699,6 +704,7 @@ class CBlockHeader:
             self.nNonce = header.nNonce
             self.sha256 = header.sha256
             self.hash = header.hash
+            self.scrypthash = header.hash
             self.calc_sha256()
 
     def set_null(self):
@@ -710,6 +716,7 @@ class CBlockHeader:
         self.nNonce = 0
         self.sha256 = None
         self.hash = None
+        self.scrypthash = None
 
     def deserialize(self, f):
         self.nVersion = int.from_bytes(f.read(4), "little", signed=True)
@@ -720,6 +727,7 @@ class CBlockHeader:
         self.nNonce = int.from_bytes(f.read(4), "little")
         self.sha256 = None
         self.hash = None
+        self.scrypthash = None
 
     def serialize(self):
         r = b""
@@ -742,6 +750,39 @@ class CBlockHeader:
             r += self.nNonce.to_bytes(4, "little")
             self.sha256 = uint256_from_str(hash256(r))
             self.hash = hash256(r)[::-1].hex()
+            self.calc_scrypthash()
+
+    def calc_scrypt(self):
+        r = b""
+        r += self.nVersion.to_bytes(4, "little", signed=True)
+        r += ser_uint256(self.hashPrevBlock)
+        r += ser_uint256(self.hashMerkleRoot)
+        r += self.nTime.to_bytes(4, "little")
+        r += self.nBits.to_bytes(4, "little")
+        r += self.nNonce.to_bytes(4, "little")
+        return scrypt(r)
+
+    def calc_scrypthash(self):
+        hash = self.calc_scrypt()
+        self.scrypthash = uint256_from_str(hash)
+        assert uint256_to_str(self.scrypthash) == hash
+
+    @property
+    def powhash(self):
+        use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
+        if use_scrypt:
+            return self.scrypthash
+        else:
+            return self.sha256
+
+    @property
+    def powhashhex(self):
+        use_scrypt = os.getenv("USE_SCRYPT", "0") == "1"
+        if use_scrypt:
+            return uint256_to_str(self.scrypthash)[::-1].hex()
+            # return self.calc_scrypt()[::-1].hex()
+        else:
+            return self.hash
 
     def rehash(self):
         self.sha256 = None
@@ -808,7 +849,7 @@ class CBlock(CBlockHeader):
     def is_valid(self):
         self.calc_sha256()
         target = uint256_from_compact(self.nBits)
-        if self.sha256 > target:
+        if self.powhash > target:
             return False
         for tx in self.vtx:
             if not tx.is_valid():
@@ -820,7 +861,7 @@ class CBlock(CBlockHeader):
     def solve(self):
         self.rehash()
         target = uint256_from_compact(self.nBits)
-        while self.sha256 > target:
+        while self.powhash > target:
             self.nNonce += 1
             self.rehash()
 

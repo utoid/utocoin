@@ -25,6 +25,7 @@ static void TestBlockSubsidyHalvings(const Consensus::Params& consensusParams)
 {
     int maxHalvings = 64;
     CAmount nInitialSubsidy = 50 * COIN;
+    CAmount nFinalSubsidy = 6.25 * COIN;
 
     CAmount nPreviousSubsidy = nInitialSubsidy * 2; // for height == 0
     BOOST_CHECK_EQUAL(nPreviousSubsidy, nInitialSubsidy * 2);
@@ -32,10 +33,15 @@ static void TestBlockSubsidyHalvings(const Consensus::Params& consensusParams)
         int nHeight = nHalvings * consensusParams.nSubsidyHalvingInterval;
         CAmount nSubsidy = GetBlockSubsidy(nHeight, consensusParams);
         BOOST_CHECK(nSubsidy <= nInitialSubsidy);
-        BOOST_CHECK_EQUAL(nSubsidy, nPreviousSubsidy / 2);
+        if ( nHeight / consensusParams.nSubsidyHalvingInterval > 3 ) {
+            BOOST_CHECK_EQUAL(nSubsidy, nFinalSubsidy);
+        } else {
+            BOOST_CHECK_EQUAL(nSubsidy, nPreviousSubsidy / 2);
+        }
+        // BOOST_CHECK_EQUAL(nSubsidy, nPreviousSubsidy / 2);
         nPreviousSubsidy = nSubsidy;
     }
-    BOOST_CHECK_EQUAL(GetBlockSubsidy(maxHalvings * consensusParams.nSubsidyHalvingInterval, consensusParams), 0);
+    BOOST_CHECK_EQUAL(GetBlockSubsidy(maxHalvings * consensusParams.nSubsidyHalvingInterval, consensusParams), nFinalSubsidy);
 }
 
 static void TestBlockSubsidyHalvings(int nSubsidyHalvingInterval)
@@ -63,7 +69,7 @@ BOOST_AUTO_TEST_CASE(subsidy_limit_test)
         nSum += nSubsidy * 1000;
         BOOST_CHECK(MoneyRange(nSum));
     }
-    BOOST_CHECK_EQUAL(nSum, CAmount{2099999997690000});
+    BOOST_CHECK_EQUAL(nSum, CAmount{23187500000000000});
 }
 
 BOOST_AUTO_TEST_CASE(signet_parse_tests)
@@ -142,11 +148,12 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
     }
 
     const auto out110 = *params->AssumeutxoForHeight(110);
-    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "6657b736d4fe4db0cbc796789e812d5dba7f5c143764b1b6905612f1830609d1");
+    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "4f5b670d17bf4f9b211ac3a9f0ad424721c338cb1451b1b1c0ab968e87bedfbd");
     BOOST_CHECK_EQUAL(out110.m_chain_tx_count, 111U);
 
-    const auto out110_2 = *params->AssumeutxoForBlockhash(uint256{"696e92821f65549c7ee134edceeeeaaa4105647a3c4fd9f298c0aec0ab50425c"});
-    BOOST_CHECK_EQUAL(out110_2.hash_serialized.ToString(), "6657b736d4fe4db0cbc796789e812d5dba7f5c143764b1b6905612f1830609d1");
+    uint256 expectHash = params->GetConsensus().fScryptPow ? uint256{"0c2db269233208c7bd6f2537d80207ff3042c84e1d5a4be8661bf8a5bae07af5"} : uint256{"696e92821f65549c7ee134edceeeeaaa4105647a3c4fd9f298c0aec0ab50425c"};
+    const auto out110_2 = *params->AssumeutxoForBlockhash(expectHash);
+    BOOST_CHECK_EQUAL(out110_2.hash_serialized.ToString(), "4f5b670d17bf4f9b211ac3a9f0ad424721c338cb1451b1b1c0ab968e87bedfbd");
     BOOST_CHECK_EQUAL(out110_2.m_chain_tx_count, 111U);
 }
 
