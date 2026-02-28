@@ -1473,7 +1473,6 @@ public:
         };
 
         PatchConsensusParams();
-        // PatchConsensusParams2();
     }
 
 protected:
@@ -1524,81 +1523,16 @@ protected:
 
         vFixedSeeds.clear();
 
-        // checkpointData = {
-        //     {
-        //         {0, uint256{"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"}},
-        //         // { 11111, uint256{"0000000069e244f73d78e8fd29ba2fd2ed618bd6fa2ee92559f542fdb26e7c1d"}},
-        //     }
-        // };
-        //
         checkpointData = {
             {
                 {0, genesisBlockMaker.BlockHash()},
+                {11111, uint256{"ddcef51ca331e8d76dfe00c3058351ecb9e2d082f0a5314386049c59ad9e8d86"}},
             }
         };
         chainTxData = ChainTxData{
             // Data from RPC: getchaintxstats 4096 0000000000003ed4f08dbdf6f7d6b271a6bcffce25675cb40aa9fa43179a89f3
             .nTime    = genesis.nTime,
             .tx_count = 1,
-            .dTxRate  = 0,
-        };
-    }
-
-    void PatchConsensusParams2()
-    {
-        consensus.nSubsidyHalvingInterval = 2100000;
-        consensus.BIP34Height = 0;
-        consensus.BIP65Height = 0;
-        consensus.BIP66Height = 0;
-        consensus.CSVHeight = 0;
-        consensus.SegwitHeight = 0;
-        consensus.powLimit = uint256{"0000307fffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
-        consensus.nPowTargetTimespan = 24 * 60 * 60; // one day
-        consensus.nPowTargetSpacing = 60;
-        consensus.fScryptPow = true;
-        consensus.nRuleChangeActivationThreshold = 18150; // 90% of 20160
-        consensus.nMinerConfirmationWindow = 20160;  // 14 days
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
-        consensus.nMinimumChainWork = uint256{};
-        consensus.defaultAssumeValid = uint256{};
-        consensus.nStakeBurnRatio = 9000;
-        pchMessageStart[0] = 0x3d;
-        pchMessageStart[1] = 0x37;
-        pchMessageStart[2] = 0x50;
-        pchMessageStart[3] = 0x49;
-        m_assumed_blockchain_size = 11;
-        m_assumed_chain_state_size = 1;
-
-        CMainNetGenesisBlock genesisBlockMaker;
-        genesis = genesisBlockMaker.Create();
-        consensus.hashGenesisBlock = genesisBlockMaker.BlockHash();
-
-        assert(consensus.hashGenesisBlock == genesisBlockMaker.BlockHash());
-        assert(genesis.hashMerkleRoot == genesisBlockMaker.MerkleRoot());
-
-        vSeeds.clear();
-        vSeeds.emplace_back("dummySeed.invalid.");
-        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,123);
-        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,108);
-        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,141);
-        base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x88, 0xb2, 0x1e};
-        base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xad, 0xe4};
-
-        bech32_hrp = "uto";
-
-        vFixedSeeds.clear();
-
-        checkpointData = {
-            {
-                {0, genesisBlockMaker.BlockHash()},
-            }
-        };
-        chainTxData = ChainTxData{
-            // Data from RPC: getchaintxstats 4096 0000000000003ed4f08dbdf6f7d6b271a6bcffce25675cb40aa9fa43179a89f3
-            .nTime    = 0,
-            .tx_count = 0,
             .dTxRate  = 0,
         };
     }
