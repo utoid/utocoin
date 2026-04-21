@@ -82,7 +82,7 @@ BOOST_AUTO_TEST_CASE(bloom_create_insert_serialize_with_tweak)
 
 BOOST_AUTO_TEST_CASE(bloom_create_insert_key)
 {
-    std::string strSecret = std::string("5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C");
+    std::string strSecret = std::string("7a3x2Z65BaasFZs15NaSG1uvsvfkaEtFLsh5FFSiRr6SdHb5QRj");
     CKey key = DecodeSecret(strSecret);
     CPubKey pubkey = key.GetPubKey();
     std::vector<unsigned char> vchPubKey(pubkey.begin(), pubkey.end());
@@ -95,7 +95,7 @@ BOOST_AUTO_TEST_CASE(bloom_create_insert_key)
     DataStream stream{};
     stream << filter;
 
-    constexpr auto expected{"038fc16b080000000000000001"_hex};
+    constexpr auto expected{"0350633f080000000000000001"_hex};
     BOOST_CHECK_EQUAL_COLLECTIONS(stream.begin(), stream.end(), expected.begin(), expected.end());
 }
 

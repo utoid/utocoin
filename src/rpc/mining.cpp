@@ -136,8 +136,11 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
 {
     block_out.reset();
     block.hashMerkleRoot = BlockMerkleRoot(block);
+    const CBlockIndex* pindex_prev = WITH_LOCK(chainman.GetMutex(), return chainman.ActiveTip());
+    const int block_height = pindex_prev == nullptr ? 0 : pindex_prev->nHeight + 1;
+    const uint256 pow_hash_key = GetRandomXKey(pindex_prev, block_height, chainman.GetConsensus());
 
-    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !CheckProofOfWork(block.GetHash(), block.nBits, chainman.GetConsensus()) && !chainman.m_interrupt) {
+    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !CheckProofOfWork(GetRandomXPoWHash(block, pow_hash_key), block.nBits, chainman.GetConsensus()) && !chainman.m_interrupt) {
         ++block.nNonce;
         --max_tries;
     }
@@ -762,14 +765,14 @@ static RPCHelpMan getblocktemplate()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid mode");
 
     if (!miner.isTestChain()) {
-        const CConnman& connman = EnsureConnman(node);
-        if (connman.GetNodeCount(ConnectionDirection::Both) == 0) {
-            throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, CLIENT_NAME " is not connected!");
-        }
+        // const CConnman& connman = EnsureConnman(node);
+        // if (connman.GetNodeCount(ConnectionDirection::Both) == 0) {
+        //     throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, CLIENT_NAME " is not connected!");
+        // }
 
-        if (miner.isInitialBlockDownload()) {
-            throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, CLIENT_NAME " is in initial sync and waiting for blocks...");
-        }
+        // if (miner.isInitialBlockDownload()) {
+        //     throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, CLIENT_NAME " is in initial sync and waiting for blocks...");
+        // }
     }
 
     static unsigned int nTransactionsUpdatedLast;

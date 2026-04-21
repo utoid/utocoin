@@ -23,7 +23,10 @@ static constexpr CAmount COIN = 100000000;
  * critical; in unusual circumstances like a(nother) overflow bug that allowed
  * for the creation of coins out of thin air modification could lead to a fork.
  * */
-static constexpr CAmount MAX_MONEY = 21000000 * COIN;
-inline bool MoneyRange(const CAmount& nValue) { return (nValue >= 0 && nValue <= MAX_MONEY); }
+// static constexpr CAmount MAX_MONEY = 21000000 * COIN;
+// static constexpr CAmount MAX_MONEY = 92233720368 * COIN;
+static constexpr CAmount MAX_MONEY = 2100000000 * COIN;
+// inline bool MoneyRange(const CAmount& nValue) { return (nValue >= 0 && nValue <= MAX_MONEY); }
+inline bool MoneyRange(const CAmount& nValue) { return (nValue >= 0); }
 
 #endif // BITCOIN_CONSENSUS_AMOUNT_H

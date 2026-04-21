@@ -353,9 +353,8 @@ TestChain100Setup::TestChain100Setup(
 
     {
         LOCK(::cs_main);
-        assert(
-            m_node.chainman->ActiveChain().Tip()->GetBlockHash().ToString() ==
-            "571d80a9967ae599cec0448b0b0ba1cfb606f584d8069bd7166b86854ba7a191");
+        std::string expectHash = "ca96b0a5c6ed0d02e587418e42348bab96431c513e6bbd874a66c9a8e980ee4b";
+        assert(m_node.chainman->ActiveChain().Tip()->GetBlockHash().ToString() == expectHash);
     }
 }
 
@@ -385,7 +384,10 @@ CBlock TestChain100Setup::CreateBlock(
     }
     RegenerateCommitments(block, *Assert(m_node.chainman));
 
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, m_node.chainman->GetConsensus())) ++block.nNonce;
+    const CBlockIndex* pindex_prev = WITH_LOCK(::cs_main, return Assert(m_node.chainman)->ActiveTip());
+    const int block_height = pindex_prev == nullptr ? 0 : pindex_prev->nHeight + 1;
+    const uint256 pow_hash_key = GetRandomXKey(pindex_prev, block_height, m_node.chainman->GetConsensus());
+    while (!CheckProofOfWork(GetRandomXPoWHash(block, pow_hash_key), block.nBits, m_node.chainman->GetConsensus())) ++block.nNonce;
 
     return block;
 }

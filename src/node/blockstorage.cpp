@@ -104,13 +104,13 @@ bool BlockTreeDB::ReadFlag(const std::string& name, bool& fValue)
     return true;
 }
 
-bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, std::function<CBlockIndex*(const uint256&)> insertBlockIndex, const util::SignalInterrupt& interrupt)
-{
+bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, std::function<CBlockIndex*(const uint256&)> insertBlockIndex, const util::SignalInterrupt& interrupt, std::function<std::optional<uint256>(const CBlockIndex *)> powHashGetter) {
     AssertLockHeld(::cs_main);
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
     pcursor->Seek(std::make_pair(DB_BLOCK_INDEX, uint256()));
 
     // Load m_block_index
+    std::vector<CBlockIndex*> vLoadedBlocks;
     while (pcursor->Valid()) {
         if (interrupt) return false;
         std::pair<uint8_t, uint256> key;
@@ -132,10 +132,7 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 pindexNew->nStatus        = diskindex.nStatus;
                 pindexNew->nTx            = diskindex.nTx;
 
-                if (!CheckProofOfWork(pindexNew->GetBlockHash(), pindexNew->nBits, consensusParams)) {
-                    LogError("%s: CheckProofOfWork failed: %s\n", __func__, pindexNew->ToString());
-                    return false;
-                }
+                vLoadedBlocks.push_back(pindexNew);
 
                 pcursor->Next();
             } else {
@@ -147,7 +144,28 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
         }
     }
 
+    for (CBlockIndex* pindexNew : vLoadedBlocks) {
+        if (interrupt) return false;
+
+        const std::optional<uint256> hashPow{powHashGetter(pindexNew)};
+        if (!hashPow) {
+            LogError("%s: missing proof-of-work ancestry while loading block index: %s\n", __func__, pindexNew->ToString());
+            return false;
+        }
+        if (!CheckProofOfWork(*hashPow, pindexNew->nBits, consensusParams)) {
+            LogError("%s: CheckProofOfWork failed: %s\n", __func__, pindexNew->ToString());
+            return false;
+        }
+    }
+
     return true;
+}
+
+bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, std::function<CBlockIndex*(const uint256&)> insertBlockIndex, const util::SignalInterrupt& interrupt)
+{
+    return LoadBlockIndexGuts(consensusParams, insertBlockIndex, interrupt, [consensusParams](const CBlockIndex *pindex) -> std::optional<uint256> {
+        return GetBlockProofHash(pindex->GetBlockHeader(), pindex->nHeight, pindex->pprev, consensusParams);
+    });
 }
 } // namespace kernel
 
@@ -1015,12 +1033,6 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos) const
         return false;
     }
 
-    // Check the header
-    if (!CheckProofOfWork(block.GetHash(), block.nBits, GetConsensus())) {
-        LogError("%s: Errors in block header at %s\n", __func__, pos.ToString());
-        return false;
-    }
-
     // Signet only: check block solution
     if (GetConsensus().signet_blocks && !CheckSignetBlockSolution(block, GetConsensus())) {
         LogError("%s: Errors in block solution at %s\n", __func__, pos.ToString());
@@ -1035,6 +1047,15 @@ bool BlockManager::ReadBlock(CBlock& block, const CBlockIndex& index) const
     const FlatFilePos block_pos{WITH_LOCK(cs_main, return index.GetBlockPos())};
 
     if (!ReadBlock(block, block_pos)) {
+        return false;
+    }
+    const std::optional<uint256> pow_hash{GetBlockProofHash(block, index.nHeight, index.pprev, GetConsensus())};
+    if (!pow_hash) {
+        LogError("%s: missing proof-of-work ancestry for block at %s\n", __func__, block_pos.ToString());
+        return false;
+    }
+    if (!CheckProofOfWork(*pow_hash, index.nBits, GetConsensus())) {
+        LogError("%s: Errors in block header at %s\n", __func__, block_pos.ToString());
         return false;
     }
     if (block.GetHash() != index.GetBlockHash()) {

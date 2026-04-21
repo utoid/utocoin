@@ -86,7 +86,8 @@ CBlock BuildChainTestingSetup::CreateBlock(const CBlockIndex* prev,
         block.hashMerkleRoot = BlockMerkleRoot(block);
     }
 
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, m_node.chainman->GetConsensus())) ++block.nNonce;
+    const uint256 pow_hash_key = GetRandomXKey(prev, prev->nHeight + 1, m_node.chainman->GetConsensus());
+    while (!CheckProofOfWork(GetRandomXPoWHash(block, pow_hash_key), block.nBits, m_node.chainman->GetConsensus())) ++block.nNonce;
 
     return block;
 }

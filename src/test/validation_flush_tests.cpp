@@ -37,7 +37,9 @@ BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
     };
 
     // PoolResource defaults to 256 KiB that will be allocated, so we'll take that and make it a bit larger.
-    constexpr size_t MAX_COINS_CACHE_BYTES = 262144 + 512;
+    // constexpr size_t MAX_COINS_CACHE_BYTES = 262144 + 512;
+    // because coinbase in genesis include 216 coins, so increase the MAX_COINS_CACHE_BYTES
+    constexpr size_t MAX_COINS_CACHE_BYTES = 275392 + 512;
 
     // Without any coins in the cache, we shouldn't need to flush.
     BOOST_TEST(

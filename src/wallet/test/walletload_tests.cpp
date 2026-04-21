@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php.
 
+#include <string>
 #include <wallet/test/util.h>
 #include <wallet/wallet.h>
 #include <test/util/logging.h>
@@ -70,7 +71,7 @@ BOOST_FIXTURE_TEST_CASE(wallet_load_descriptors, TestingSetup)
     {
         // Write valid descriptor with invalid ID
         WalletBatch batch(*database, false);
-        std::string desc = "wpkh([d34db33f/84h/0h/0h]xpub6DJ2dNUysrn5Vt36jH2KLBT2i1auw1tTSSomg8PhqNiUtx8QX2SvC9nrHu81fT41fvDUnhMjEzQgXnQjKEu3oaqMSzhSrHMxyyoEAmUHQbY/0/*)#cjjspncu";
+        std::string desc = "wpkh([ab85c536/44h/1314h/0h]upub5Fsdhqz1i4Zgwsku2yAQHu7taGq8xJqnnNnnhWrcuy16PuSJoHHoc1Zsq8cZAXYJKbQpntJ1rHrzte2876uWjikHkqx1S6VEpEUu9xfNSC7/0/*)#8cmmrxsl";
         WalletDescriptor wallet_descriptor(std::make_shared<DummyDescriptor>(desc), 0, 0, 0, 0);
         BOOST_CHECK(batch.WriteDescriptor(uint256::ONE, wallet_descriptor));
     }

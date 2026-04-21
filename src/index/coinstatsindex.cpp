@@ -158,6 +158,7 @@ bool CoinStatsIndex::CustomAppend(const interfaces::BlockInfo& block)
 
             for (uint32_t j = 0; j < tx->vout.size(); ++j) {
                 const CTxOut& out{tx->vout[j]};
+
                 Coin coin{out, block.height, tx->IsCoinBase()};
                 COutPoint outpoint{tx->GetHash(), j};
 
@@ -201,8 +202,35 @@ bool CoinStatsIndex::CustomAppend(const interfaces::BlockInfo& block)
         }
     } else {
         // genesis block
-        m_total_unspendable_amount += block_subsidy;
-        m_total_unspendables_genesis_block += block_subsidy;
+        // m_total_unspendable_amount += block_subsidy;
+        // m_total_unspendables_genesis_block += block_subsidy;
+
+        
+        assert(block.data);
+        CAmount genesis_subsidy{0};
+        for (size_t i = 0; i < block.data->vtx[0]->vout.size(); ++i) {
+            const CTxOut& out = block.data->vtx[0]->vout[i];
+            Coin coin{out, 0, true};
+            COutPoint outpoint{block.data->vtx[0]->GetHash(), (uint32_t)i};
+
+            genesis_subsidy += coin.out.nValue;
+
+            if (coin.out.scriptPubKey.IsUnspendable()) {
+                m_total_unspendable_amount += coin.out.nValue;
+                m_total_unspendables_scripts += coin.out.nValue;
+                continue;
+            }
+
+            ApplyCoinHash(m_muhash, outpoint, coin);
+
+            // genesis coinbase, count as coinbase amount
+            m_total_coinbase_amount += coin.out.nValue;
+
+            ++m_transaction_output_count;
+            m_total_amount += coin.out.nValue;
+            m_bogo_size += GetBogoSize(coin.out.scriptPubKey);
+        }
+        m_total_subsidy += genesis_subsidy;
     }
 
     // If spent prevouts + block subsidy are still a higher amount than

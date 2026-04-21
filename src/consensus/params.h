@@ -11,6 +11,7 @@
 #include <chrono>
 #include <limits>
 #include <map>
+#include <string>
 #include <vector>
 
 namespace Consensus {
@@ -116,6 +117,9 @@ struct Params {
     bool fPowNoRetargeting;
     int64_t nPowTargetSpacing;
     int64_t nPowTargetTimespan;
+    uint32_t randomx_epoch;
+    uint32_t randomx_lag;
+    std::string randomx_genesis_key;
     std::chrono::seconds PowTargetSpacing() const
     {
         return std::chrono::seconds{nPowTargetSpacing};
@@ -149,6 +153,8 @@ struct Params {
         } // no default case, so the compiler can warn about missing cases
         return std::numeric_limits<int>::max();
     }
+
+    int32_t nStakeBurnRatio;  // At least what percentage of the stake should be burned? The calculation is n/10000
 };
 
 } // namespace Consensus

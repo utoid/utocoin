@@ -3,7 +3,7 @@
 # file COPYING or https://opensource.org/license/mit/.
 
 # Wallet functionality used by bitcoind and bitcoin-wallet executables.
-add_library(bitcoin_wallet STATIC EXCLUDE_FROM_ALL
+add_library(utocoin_wallet STATIC EXCLUDE_FROM_ALL
   coincontrol.cpp
   coinselection.cpp
   context.cpp
@@ -33,7 +33,7 @@ add_library(bitcoin_wallet STATIC EXCLUDE_FROM_ALL
   walletdb.cpp
   walletutil.cpp
 )
-target_link_libraries(bitcoin_wallet
+target_link_libraries(utocoin_wallet
   PRIVATE
     core_interface
     bitcoin_common
@@ -46,14 +46,14 @@ if(NOT USE_SQLITE AND NOT USE_BDB)
   message(FATAL_ERROR "Wallet functionality requested but no BDB or SQLite support available.")
 endif()
 if(USE_SQLITE)
-  target_sources(bitcoin_wallet PRIVATE sqlite.cpp)
-  target_link_libraries(bitcoin_wallet
+  target_sources(utocoin_wallet PRIVATE sqlite.cpp)
+  target_link_libraries(utocoin_wallet
     PRIVATE
       $<TARGET_NAME_IF_EXISTS:unofficial::sqlite3::sqlite3>
       $<TARGET_NAME_IF_EXISTS:SQLite::SQLite3>
   )
 endif()
 if(USE_BDB)
-  target_sources(bitcoin_wallet PRIVATE bdb.cpp salvage.cpp)
-  target_link_libraries(bitcoin_wallet PUBLIC BerkeleyDB::BerkeleyDB)
+  target_sources(utocoin_wallet PRIVATE bdb.cpp salvage.cpp)
+  target_link_libraries(utocoin_wallet PUBLIC BerkeleyDB::BerkeleyDB)
 endif()

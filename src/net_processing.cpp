@@ -2474,15 +2474,15 @@ void PeerManagerImpl::SendBlockTransactions(CNode& pfrom, Peer& peer, const CBlo
 
 bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, const Consensus::Params& consensusParams, Peer& peer)
 {
-    // Do these headers have proof-of-work matching what's claimed?
-    if (!HasValidProofOfWork(headers, consensusParams)) {
-        Misbehaving(peer, "header with invalid proof of work");
-        return false;
-    }
-
     // Are these headers connected to each other?
     if (!CheckHeadersAreContinuous(headers)) {
         Misbehaving(peer, "non-continuous headers sequence");
+        return false;
+    }
+
+    const CBlockIndex* first_prev = WITH_LOCK(::cs_main, return m_chainman.m_blockman.LookupBlockIndex(headers.front().hashPrevBlock));
+    if (first_prev != nullptr && !HasValidProofOfWork(headers, consensusParams, first_prev)) {
+        Misbehaving(peer, "header with invalid proof of work");
         return false;
     }
     return true;

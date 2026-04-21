@@ -52,8 +52,10 @@ std::vector<std::shared_ptr<CBlock>> CreateBlockChain(size_t total_height, const
         block.nTime = ++time;
         block.nBits = params.GenesisBlock().nBits;
         block.nNonce = 0;
+        const int key_height = GetRandomXKeyBlockHeight(height, params.GetConsensus());
+        const uint256 pow_hash_key = key_height == 0 ? params.GenesisBlock().GetHash() : ret.at(key_height)->GetHash();
 
-        while (!CheckProofOfWork(block.GetHash(), block.nBits, params.GetConsensus())) {
+        while (!CheckProofOfWork(GetRandomXPoWHash(block, pow_hash_key), block.nBits, params.GetConsensus())) {
             ++block.nNonce;
             assert(block.nNonce);
         }
@@ -87,7 +89,10 @@ protected:
 
 COutPoint MineBlock(const NodeContext& node, std::shared_ptr<CBlock>& block)
 {
-    while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) {
+    const CBlockIndex* pindex_prev = WITH_LOCK(::cs_main, return Assert(node.chainman)->ActiveTip());
+    const int block_height = pindex_prev == nullptr ? 0 : pindex_prev->nHeight + 1;
+    const uint256 pow_hash_key = GetRandomXKey(pindex_prev, block_height, Params().GetConsensus());
+    while (!CheckProofOfWork(GetRandomXPoWHash(*block, pow_hash_key), block->nBits, Params().GetConsensus())) {
         ++block->nNonce;
         assert(block->nNonce);
     }

@@ -21,7 +21,9 @@ static void mineBlock(const node::NodeContext& node, std::chrono::seconds block_
     auto curr_time = GetTime<std::chrono::seconds>();
     SetMockTime(block_time); // update time so the block is created with it
     CBlock block = node::BlockAssembler{node.chainman->ActiveChainstate(), nullptr, {}}.CreateNewBlock()->block;
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, node.chainman->GetConsensus())) ++block.nNonce;
+    const CBlockIndex* pindex_prev = WITH_LOCK(::cs_main, return node.chainman->ActiveTip());
+    const uint256 pow_hash_key = GetRandomXKey(pindex_prev, pindex_prev->nHeight + 1, node.chainman->GetConsensus());
+    while (!CheckProofOfWork(GetRandomXPoWHash(block, pow_hash_key), block.nBits, node.chainman->GetConsensus())) ++block.nNonce;
     block.fChecked = true; // little speedup
     SetMockTime(curr_time); // process block at current time
     Assert(node.chainman->ProcessNewBlock(std::make_shared<const CBlock>(block), /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));

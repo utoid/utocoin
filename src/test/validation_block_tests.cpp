@@ -94,8 +94,9 @@ std::shared_ptr<CBlock> MinerTestingSetup::FinalizeBlock(std::shared_ptr<CBlock>
     m_node.chainman->GenerateCoinbaseCommitment(*pblock, prev_block);
 
     pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
+    const uint256 pow_hash_key = GetRandomXKey(prev_block, prev_block->nHeight + 1, Params().GetConsensus());
 
-    while (!CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus())) {
+    while (!CheckProofOfWork(GetRandomXPoWHash(*pblock, pow_hash_key), pblock->nBits, Params().GetConsensus())) {
         ++(pblock->nNonce);
     }
 

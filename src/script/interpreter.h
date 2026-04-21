@@ -17,6 +17,8 @@
 #include <cstdint>
 #include <optional>
 #include <vector>
+#include <functional>
+#include <consensus/params.h>
 
 class CPubKey;
 class CScript;
@@ -244,7 +246,41 @@ uint256 SignatureHash(const CScript& scriptCode, const T& txTo, unsigned int nIn
 
 class BaseSignatureChecker
 {
+private:
+    friend class CBlenderScopeGuard;
+    class CBlenderScopeGuard
+    {
+    private:
+        const BaseSignatureChecker& m_base;
+        uint256 m_data_hash;
+        std::function<void(uint256 &hash)> m_old_blender;
+    public:
+        CBlenderScopeGuard(const BaseSignatureChecker &base, const std::vector<unsigned char> &data) : m_base(base), m_data_hash(Hash(data))
+        {
+            m_old_blender = m_base.m_hash_blender;
+            m_base.m_hash_blender = [this, data](uint256 &hash) {
+                hash = Hash(m_data_hash, hash);
+            };
+        }
+        virtual ~CBlenderScopeGuard()
+        {
+            m_base.m_hash_blender = m_old_blender;
+        }
+    };
+
+    mutable std::function<void(uint256 &hash)> m_hash_blender;
+    Consensus::Params m_params;
 public:
+    virtual CTransactionRef VerifingTransaction() const {return nullptr;}
+    virtual COutPoint VerifyingPrevout() const {return COutPoint{};}
+    virtual CAmount GetAmount() const {return 0;}
+    virtual const Consensus::Params &GetParams() const {return m_params;}
+
+    BaseSignatureChecker &WithParams(const Consensus::Params &params)
+    {
+        m_params = params;
+        return *this;
+    }
     virtual bool CheckECDSASignature(const std::vector<unsigned char>& scriptSig, const std::vector<unsigned char>& vchPubKey, const CScript& scriptCode, SigVersion sigversion) const
     {
         return false;
@@ -263,6 +299,20 @@ public:
     virtual bool CheckSequence(const CScriptNum& nSequence) const
     {
          return false;
+    }
+
+    // SighashBlender is purposed for OP_CHECKDATSIG and OP_CHECKDATSIGVERIFY.
+    virtual void SighashBlender(uint256 &hash) const
+    {
+        if ( m_hash_blender ) {
+            m_hash_blender(hash);
+        }
+    }
+
+    virtual bool WithSighashBlender(const std::vector<unsigned char> &vchData, const std::function<bool()> &fnCheck) const
+    {
+        CBlenderScopeGuard guard(*this, vchData);
+        return fnCheck();
     }
 
     virtual ~BaseSignatureChecker() = default;
@@ -301,6 +351,10 @@ public:
     bool CheckSchnorrSignature(Span<const unsigned char> sig, Span<const unsigned char> pubkey, SigVersion sigversion, ScriptExecutionData& execdata, ScriptError* serror = nullptr) const override;
     bool CheckLockTime(const CScriptNum& nLockTime) const override;
     bool CheckSequence(const CScriptNum& nSequence) const override;
+
+    CTransactionRef VerifingTransaction() const override {return MakeTransactionRef(*txTo);}
+    COutPoint VerifyingPrevout() const override {return txTo->vin[nIn].prevout;}
+    CAmount GetAmount() const override {return amount;}
 };
 
 using TransactionSignatureChecker = GenericTransactionSignatureChecker<CTransaction>;

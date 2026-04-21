@@ -28,6 +28,10 @@ std::optional<arith_uint256> DeriveTarget(unsigned int nBits, const uint256 pow_
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params&);
 unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params&);
+int GetRandomXKeyBlockHeight(int block_height, const Consensus::Params& params);
+uint256 GetRandomXKey(const CBlockIndex* pindex_prev, int block_height, const Consensus::Params& params);
+uint256 GetRandomXPoWHash(const CBlockHeader& block, const uint256& key);
+std::optional<uint256> GetBlockProofHash(const CBlockHeader& block, int block_height, const CBlockIndex* pindex_prev, const Consensus::Params& params);
 
 /** Check whether a block hash satisfies the proof-of-work requirement specified by nBits */
 bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&);

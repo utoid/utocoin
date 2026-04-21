@@ -64,7 +64,7 @@ static void InterpretFeeEstimationInstructions(const UniValue& conf_target, cons
     }
 }
 
-std::set<int> InterpretSubtractFeeFromOutputInstructions(const UniValue& sffo_instructions, const std::vector<std::string>& destinations)
+std::set<int> InterpretSubtractFeeFromOutputInstructions(const UniValue& sffo_instructions, const std::vector<std::string>& destinations, bool ignore_notfound = false)
 {
     std::set<int> sffo_set;
     if (sffo_instructions.isNull()) return sffo_set;
@@ -73,7 +73,13 @@ std::set<int> InterpretSubtractFeeFromOutputInstructions(const UniValue& sffo_in
         int pos{-1};
         if (sffo.isStr()) {
             auto it = find(destinations.begin(), destinations.end(), sffo.get_str());
-            if (it == destinations.end()) throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid parameter 'subtract fee from output', destination %s not found in tx outputs", sffo.get_str()));
+            if (it == destinations.end()) {
+                if (ignore_notfound) {
+                    continue;
+                } else {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid parameter 'subtract fee from output', destination %s not found in tx outputs", sffo.get_str()));
+                }
+            }
             pos = it - destinations.begin();
         } else if (sffo.isNum()) {
             pos = sffo.getInt<int>();
@@ -408,6 +414,111 @@ RPCHelpMan sendmany()
             ParseOutputs(sendTo),
             InterpretSubtractFeeFromOutputInstructions(request.params[4], sendTo.getKeys())
     );
+    const bool verbose{request.params[9].isNull() ? false : request.params[9].get_bool()};
+
+    return SendMoney(*pwallet, coin_control, recipients, std::move(mapValue), verbose);
+},
+    };
+}
+
+RPCHelpMan sendmanyex()
+{
+    return RPCHelpMan{"sendmanyex",
+        "Send multiple times. Amounts are double-precision floating point numbers." +
+        HELP_REQUIRING_PASSPHRASE,
+                {
+                    {"dummy", RPCArg::Type::STR, RPCArg::Default{"\"\""}, "Must be set to \"\" for backwards compatibility.",
+                     RPCArgOptions{
+                         .oneline_description = "\"\"",
+                     }},
+                    {"amounts", RPCArg::Type::ARR, RPCArg::Optional::NO, "The addresses and amounts",
+                        {
+                            {"part", RPCArg::Type::OBJ_USER_KEYS, RPCArg::Optional::NO, "One part of the addresses and amounts",
+                                {
+                                    {"address", RPCArg::Type::AMOUNT, RPCArg::Optional::NO, "The bitcoin address is the key, the numeric amount (can be string) in " + CURRENCY_UNIT + " is the value"},
+                                },
+                            },
+                        },
+                    },
+                    {"minconf", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "Ignored dummy value"},
+                    {"comment", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "A comment"},
+                    {"subtractfeefrom", RPCArg::Type::ARR, RPCArg::Optional::OMITTED, "The addresses.\n"
+                                       "The fee will be equally deducted from the amount of each selected address.\n"
+                                       "Those recipients will receive less bitcoins than you enter in their corresponding amount field.\n"
+                                       "If no addresses are specified here, the sender pays the fee.",
+                        {
+                            {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Subtract fee from this address"},
+                        },
+                    },
+                    {"replaceable", RPCArg::Type::BOOL, RPCArg::DefaultHint{"wallet default"}, "Signal that this transaction can be replaced by a transaction (BIP 125)"},
+                    {"conf_target", RPCArg::Type::NUM, RPCArg::DefaultHint{"wallet -txconfirmtarget"}, "Confirmation target in blocks"},
+                    {"estimate_mode", RPCArg::Type::STR, RPCArg::Default{"unset"}, "The fee estimate mode, must be one of (case insensitive):\n"
+                      + FeeModesDetail(std::string("economical mode is used if the transaction is replaceable;\notherwise, conservative mode is used"))},
+                    {"fee_rate", RPCArg::Type::AMOUNT, RPCArg::DefaultHint{"not set, fall back to wallet fee estimation"}, "Specify a fee rate in " + CURRENCY_ATOM + "/vB."},
+                    {"verbose", RPCArg::Type::BOOL, RPCArg::Default{false}, "If true, return extra information about the transaction."},
+                },
+                {
+                    RPCResult{"if verbose is not set or set to false",
+                        RPCResult::Type::STR_HEX, "txid", "The transaction id for the send. Only 1 transaction is created regardless of\n"
+                "the number of addresses."
+                    },
+                    RPCResult{"if verbose is set to true",
+                        RPCResult::Type::OBJ, "", "",
+                        {
+                            {RPCResult::Type::STR_HEX, "txid", "The transaction id for the send. Only 1 transaction is created regardless of\n"
+                "the number of addresses."},
+                            {RPCResult::Type::STR, "fee_reason", "The transaction fee reason."}
+                        },
+                    },
+                },
+                RPCExamples{
+            "\nSend two amounts to two different addresses:\n"
+            + HelpExampleCli("sendmanyex", "\"\" \"[{\\\"" + EXAMPLE_ADDRESS[0] + "\\\":0.01,\\\"" + EXAMPLE_ADDRESS[1] + "\\\":0.02}, {\\\"" + EXAMPLE_ADDRESS[0] + "\\\":0.01}]\"") +
+            "\nSend two amounts to two different addresses setting the confirmation and comment:\n"
+            + HelpExampleCli("sendmanyex", "\"\" \"[{\\\"" + EXAMPLE_ADDRESS[0] + "\\\":0.01,\\\"" + EXAMPLE_ADDRESS[1] + "\\\":0.02}, {\\\"" + EXAMPLE_ADDRESS[0] + "\\\":0.01}]\" 6 \"testing\"") +
+            "\nSend two amounts to two different addresses, subtract fee from amount:\n"
+            + HelpExampleCli("sendmanyex", "\"\" \"[{\\\"" + EXAMPLE_ADDRESS[0] + "\\\":0.01,\\\"" + EXAMPLE_ADDRESS[1] + "\\\":0.02}, {\\\"" + EXAMPLE_ADDRESS[0] + "\\\":0.01}]\" 1 \"\" \"[\\\"" + EXAMPLE_ADDRESS[0] + "\\\",\\\"" + EXAMPLE_ADDRESS[1] + "\\\"]\"") +
+            "\nAs a JSON-RPC call\n"
+            + HelpExampleRpc("sendmanyex", "\"\", [{\\\"" + EXAMPLE_ADDRESS[0] + "\\\":0.01,\\\"" + EXAMPLE_ADDRESS[1] + "\\\":0.02}, {\\\"" + EXAMPLE_ADDRESS[0] + "\\\":0.01}], 6, \"testing\"")
+                },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return UniValue::VNULL;
+
+    // Make sure the results are valid at least up to the most recent block
+    // the user could have gotten from another RPC command prior to now
+    pwallet->BlockUntilSyncedToCurrentChain();
+
+    LOCK(pwallet->cs_wallet);
+
+    if (!request.params[0].isNull() && !request.params[0].get_str().empty()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Dummy value must be set to \"\"");
+    }
+    UniValue sendTo = request.params[1].get_array();
+
+    mapValue_t mapValue;
+    if (!request.params[3].isNull() && !request.params[3].get_str().empty())
+        mapValue["comment"] = request.params[3].get_str();
+
+    CCoinControl coin_control;
+    if (!request.params[5].isNull()) {
+        coin_control.m_signal_bip125_rbf = request.params[5].get_bool();
+    }
+
+    SetFeeEstimateMode(*pwallet, coin_control, /*conf_target=*/request.params[6], /*estimate_mode=*/request.params[7], /*fee_rate=*/request.params[8], /*override_min_fee=*/false);
+
+    std::vector<CRecipient> recipients;
+    for (size_t i = 0;i < sendTo.size();i++) {
+        UniValue sendToPart = sendTo[i].get_obj();
+
+        std::vector<CRecipient> part = CreateRecipients(
+                ParseOutputs(sendToPart),
+                InterpretSubtractFeeFromOutputInstructions(request.params[4], sendToPart.getKeys(), true)
+        );
+        recipients.insert(recipients.end(), part.begin(), part.end());
+    }
+
     const bool verbose{request.params[9].isNull() ? false : request.params[9].get_bool()};
 
     return SendMoney(*pwallet, coin_control, recipients, std::move(mapValue), verbose);

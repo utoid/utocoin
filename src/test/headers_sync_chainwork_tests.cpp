@@ -15,7 +15,7 @@
 
 struct HeadersGeneratorSetup : public RegTestingSetup {
     /** Search for a nonce to meet (regtest) proof of work */
-    void FindProofOfWork(CBlockHeader& starting_header);
+    void FindProofOfWork(CBlockHeader& starting_header, const uint256& key);
     /**
      * Generate headers in a chain that build off a given starting hash, using
      * the given nVersion, advancing time by 1 second from the starting
@@ -26,9 +26,9 @@ struct HeadersGeneratorSetup : public RegTestingSetup {
             const uint256& merkle_root, const uint32_t nBits);
 };
 
-void HeadersGeneratorSetup::FindProofOfWork(CBlockHeader& starting_header)
+void HeadersGeneratorSetup::FindProofOfWork(CBlockHeader& starting_header, const uint256& key)
 {
-    while (!CheckProofOfWork(starting_header.GetHash(), starting_header.nBits, Params().GetConsensus())) {
+    while (!CheckProofOfWork(GetRandomXPoWHash(starting_header, key), starting_header.nBits, Params().GetConsensus())) {
         ++(starting_header.nNonce);
     }
 }
@@ -48,7 +48,10 @@ void HeadersGeneratorSetup::GenerateHeaders(std::vector<CBlockHeader>& headers,
         next_header.nTime = prev_time+1;
         next_header.nBits = nBits;
 
-        FindProofOfWork(next_header);
+        const int block_height = static_cast<int>(headers.size()) + 1;
+        const int key_height = GetRandomXKeyBlockHeight(block_height, Params().GetConsensus());
+        const uint256 key = key_height == 0 ? Params().GenesisBlock().GetHash() : headers.at(key_height - 1).GetHash();
+        FindProofOfWork(next_header, key);
         prev_hash = next_header.GetHash();
         prev_time = next_header.nTime;
     }

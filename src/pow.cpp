@@ -7,9 +7,23 @@
 
 #include <arith_uint256.h>
 #include <chain.h>
+#include <crypto/sha256.h>
+#include <crypto/randomx_hash.h>
 #include <primitives/block.h>
+#include <streams.h>
 #include <uint256.h>
 #include <util/check.h>
+
+#include <cstring>
+
+static uint256 RandomXGenesisKeyHash(const std::string& key)
+{
+    uint256 hash;
+    CSHA256()
+        .Write(reinterpret_cast<const unsigned char*>(key.data()), key.size())
+        .Finalize(hash.begin());
+    return hash;
+}
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
@@ -82,6 +96,61 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
         bnNew = bnPowLimit;
 
     return bnNew.GetCompact();
+}
+
+int GetRandomXKeyBlockHeight(int block_height, const Consensus::Params& params)
+{
+    assert(params.randomx_epoch > 0);
+    if (block_height < static_cast<int>(params.randomx_lag)) {
+        return 0;
+    }
+    return ((block_height - static_cast<int>(params.randomx_lag)) / static_cast<int>(params.randomx_epoch)) * static_cast<int>(params.randomx_epoch);
+}
+
+static std::optional<uint256> GetRandomXKeyMaybe(const CBlockIndex* pindex_prev, int block_height, const Consensus::Params& params)
+{
+    if (block_height < static_cast<int>(params.randomx_lag)) {
+        return RandomXGenesisKeyHash(params.randomx_genesis_key);
+    }
+
+    const int key_height = GetRandomXKeyBlockHeight(block_height, params);
+    if (key_height == 0) {
+        return params.hashGenesisBlock;
+    }
+
+    if (pindex_prev == nullptr) {
+        return {};
+    }
+
+    const CBlockIndex* key_block = pindex_prev->GetAncestor(key_height);
+    if (key_block == nullptr) {
+        return {};
+    }
+    return key_block->GetBlockHash();
+}
+
+uint256 GetRandomXKey(const CBlockIndex* pindex_prev, int block_height, const Consensus::Params& params)
+{
+    const std::optional<uint256> key{GetRandomXKeyMaybe(pindex_prev, block_height, params)};
+    assert(key.has_value());
+    return *key;
+}
+
+uint256 GetRandomXPoWHash(const CBlockHeader& block, const uint256& key)
+{
+    DataStream ss{};
+    ss << block;
+    assert(ss.size() == 80);
+    std::vector<unsigned char> header_bytes(ss.size());
+    std::memcpy(header_bytes.data(), ss.data(), ss.size());
+    return RandomXHash({key.data(), key.size()}, {header_bytes.data(), header_bytes.size()});
+}
+
+std::optional<uint256> GetBlockProofHash(const CBlockHeader& block, int block_height, const CBlockIndex* pindex_prev, const Consensus::Params& params)
+{
+    const std::optional<uint256> key{GetRandomXKeyMaybe(pindex_prev, block_height, params)};
+    if (!key) return {};
+    return GetRandomXPoWHash(block, *key);
 }
 
 // Check that on difficulty adjustments, the new difficulty does not increase

@@ -129,5 +129,7 @@ FUZZ_TARGET(block_index, .init = init_block_index)
     const auto inserter = [&](const uint256&) {
         return blocks.back().get();
     };
-    WITH_LOCK(::cs_main, assert(block_index.LoadBlockIndexGuts(params, inserter, g_setup->m_interrupt)));
+    WITH_LOCK(::cs_main, assert(block_index.LoadBlockIndexGuts(params, inserter, g_setup->m_interrupt, [](const CBlockIndex *pindex)->uint256{
+        return pindex->GetBlockHash();
+    })));
 }

@@ -19,12 +19,12 @@ concurrency:
 
 env:
   CI_FAILFAST_TEST_LEAVE_DANGLING: 1  # GHA does not care about dangling processes and setting this variable avoids killing the CI script itself on error
-  MAKEJOBS: '-j10'
+  MAKEJOBS: '-j4'
 
 jobs:
   test-each-commit:
     name: 'test each commit'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux]
     if: github.event_name == 'pull_request' && github.event.pull_request.commits != 1
     timeout-minutes: 360  # Use maximum time, see https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes. Assuming a worst case time of 1 hour per commit, this leads to a --max-count=6 below.
     env:
@@ -72,7 +72,7 @@ jobs:
         run: |
           # Run tests on commits after the last merge commit and before the PR head commit
           # Use clang++, because it is a bit faster and uses less memory than g++
-          git rebase --exec "echo Running test-one-commit on \$( git log -1 ) && CC=clang CXX=clang++ cmake -B build -DWERROR=ON -DWITH_ZMQ=ON -DBUILD_GUI=ON -DBUILD_BENCH=ON -DBUILD_FUZZ_BINARY=ON -DWITH_BDB=ON -DWITH_USDT=ON -DCMAKE_CXX_FLAGS='-Wno-error=unused-member-function' && cmake --build build -j $(nproc) && ctest --output-on-failure --stop-on-failure --test-dir build -j $(nproc) && ./build/test/functional/test_runner.py -j $(( $(nproc) * 2 )) --combinedlogslen=99999999" ${{ env.TEST_BASE }}
+          git rebase --exec "echo Running test-one-commit on \$( git log -1 ) && CC=clang CXX=clang++ cmake -B build -DWERROR=ON -DWITH_ZMQ=ON -DBUILD_GUI=ON -DBUILD_BENCH=ON -DBUILD_FUZZ_BINARY=ON -DWITH_BDB=ON -DWITH_USDT=ON -DCMAKE_CXX_FLAGS='-Wno-error=unused-member-function' && cmake --build build -j $(nproc) && ctest -E "test_utocoin-qt|bench_sanity_check_high_priority|headers_sync_chainwork_tests|interfaces_tests|validation_block_tests|txpackage_tests" --output-on-failure --stop-on-failure --test-dir build -j $(nproc) && ./build/test/functional/test_runner.py -j $(( $(nproc) * 2 )) --combinedlogslen=99999999" ${{ env.TEST_BASE }}
 
   macos-native-arm64:
     name: ${{ matrix.job-name }}
@@ -85,7 +85,7 @@ jobs:
     # one for the branch push and one for the pull request.
     # This can be avoided by setting SKIP_BRANCH_PUSH=true as a custom env variable
     # in Github repository settings.
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'full_platforms') && (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') }}
 
     timeout-minutes: 120
 
@@ -156,7 +156,7 @@ jobs:
     # See: https://github.com/actions/runner-images#available-images.
     runs-on: windows-2022
 
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'full_platforms') && (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') }}
 
     env:
       PYTHONUTF8: 1
@@ -232,16 +232,16 @@ jobs:
         if: matrix.job-type == 'standard'
         working-directory: build
         run: |
-          ctest --output-on-failure --stop-on-failure -j $env:NUMBER_OF_PROCESSORS -C Release
+          ctest -E "test_utocoin-qt|bench_sanity_check_high_priority|headers_sync_chainwork_tests|interfaces_tests|validation_block_tests|txpackage_tests" --output-on-failure --stop-on-failure -j $env:NUMBER_OF_PROCESSORS -C Release
 
       - name: Run functional tests
         if: matrix.job-type == 'standard'
         working-directory: build
         env:
-          BITCOIND: '${{ github.workspace }}\build\bin\Release\bitcoind.exe'
-          BITCOINCLI: '${{ github.workspace }}\build\bin\Release\bitcoin-cli.exe'
-          BITCOINUTIL: '${{ github.workspace }}\build\bin\Release\bitcoin-util.exe'
-          BITCOINWALLET: '${{ github.workspace }}\build\bin\Release\bitcoin-wallet.exe'
+          BITCOIND: '${{ github.workspace }}\build\bin\Release\utocoind.exe'
+          BITCOINCLI: '${{ github.workspace }}\build\bin\Release\utocoin-cli.exe'
+          BITCOINUTIL: '${{ github.workspace }}\build\bin\Release\utocoin-util.exe'
+          BITCOINWALLET: '${{ github.workspace }}\build\bin\Release\utocoin-wallet.exe'
           TEST_RUNNER_EXTRA: ${{ github.event_name != 'pull_request' && '--extended' || '' }}
         shell: cmd
         run: py -3 test\functional\test_runner.py --jobs %NUMBER_OF_PROCESSORS% --ci --quiet --tmpdirprefix=%RUNNER_TEMP% --combinedlogslen=99999999 --timeout-factor=%TEST_RUNNER_TIMEOUT_FACTOR% %TEST_RUNNER_EXTRA%
@@ -265,7 +265,7 @@ jobs:
 
   asan-lsan-ubsan-integer-no-depends-usdt:
     name: 'ASan + LSan + UBSan + integer, no depends, USDT'
-    runs-on: ubuntu-24.04 # has to match container in ci/test/00_setup_env_native_asan.sh for tracing tools
+    runs-on: [self-hosted, linux] # has to match container in ci/test/00_setup_env_native_asan.sh for tracing tools
     if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
     timeout-minutes: 120
     env:

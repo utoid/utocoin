@@ -1170,6 +1170,121 @@ static RPCHelpMan gettxout()
     };
 }
 
+static RPCHelpMan getutxo()
+{
+    return RPCHelpMan{
+        "getutxo",
+        "\nReturns details about an unspent utxo.\n",
+        {
+            {"txid", RPCArg::Type::STR, RPCArg::Optional::NO, "The transaction id"},
+            {"n", RPCArg::Type::NUM, RPCArg::Optional::NO, "vout number"},
+            {"block_height", RPCArg::Type::NUM, RPCArg::Optional::NO, "Starting block height for scan"},
+            {"script_pubkey", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "This parameter has no practical significance, it is only for compatibility with SPV wallets"},
+        },
+        {
+            RPCResult{"If the UTXO was not found", RPCResult::Type::NONE, "", ""},
+            RPCResult{"If the UTXO was spent", RPCResult::Type::OBJ, "", "", {
+                                                                                 {RPCResult::Type::STR, "spendingTxId", "the transaction that spent the output that a spend report was requested for."},
+                                                                                 {RPCResult::Type::NUM, "spendingInputIndex", "the input index of the transaction above which spends the target output."},
+                                                                                 {RPCResult::Type::NUM, "spendingTxHeight", "the hight of the block that included the transaction above which spent the target output."},
+                                                                             }},
+            RPCResult{"Otherwise", RPCResult::Type::OBJ, "", "", {
+                                                                     {RPCResult::Type::STR_HEX, "bestblock", "The hash of the block at the tip of the chain"},
+                                                                     {RPCResult::Type::NUM, "confirmations", "The number of confirmations"},
+                                                                     {RPCResult::Type::STR_AMOUNT, "value", "The transaction value in " + CURRENCY_UNIT},
+                                                                     {RPCResult::Type::OBJ, "scriptPubKey", "", {
+                                                                                                                    {RPCResult::Type::STR, "asm", "Disassembly of the output script"},
+                                                                                                                    {RPCResult::Type::STR, "desc", "Inferred descriptor for the output"},
+                                                                                                                    {RPCResult::Type::STR_HEX, "hex", "The raw output script bytes, hex-encoded"},
+                                                                                                                    {RPCResult::Type::STR, "type", "The type, eg pubkeyhash"},
+                                                                                                                    {RPCResult::Type::STR, "address", /*optional=*/true, "The Bitcoin address (only if a well-defined address exists)"},
+                                                                                                                }},
+                                                                     {RPCResult::Type::BOOL, "coinbase", "Coinbase or not"},
+                                                                     {RPCResult::Type::NUM, "blockHeight", "The number of block height"},
+                                                                     {RPCResult::Type::STR, "blockHash", "The block hash"},
+                                                                 }},
+        },
+        RPCExamples{"\nGet unspent output\n"
+            + HelpExampleCli("getutxo", "\"txid\" 1 600")
+            + HelpExampleCli("getutxo", "\"txid\" 1 600 \"<script_hex_str>\"")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
+            // UniValue ret = call_rpc(request, gettxout(), {request.params[0], request.params[1], false});
+            UniValue ret(UniValue::VOBJ);
+
+            auto hash{Txid::FromUint256(ParseHashV(request.params[0], "txid"))};
+            COutPoint out{hash, request.params[1].getInt<uint32_t>()};
+
+            ::node::NodeContext& node = EnsureAnyNodeContext(request.context);
+            ChainstateManager& chainman = EnsureChainman(node);
+            {
+                LOCK(cs_main);
+                Chainstate& active_chainstate = chainman.ActiveChainstate();
+                CChain &active_chain = chainman.ActiveChain();
+                CCoinsViewCache* coins_view = &active_chainstate.CoinsTip();
+
+                int chainHeight = active_chain.Height();
+
+                std::optional<Coin> coin = coins_view->GetCoin(out);
+                if (coin) {
+                    const CBlockIndex* pindex = active_chainstate.m_blockman.LookupBlockIndex(coins_view->GetBestBlock());
+                    ret.pushKV("bestblock", pindex->GetBlockHash().GetHex());
+                    if (coin->nHeight == MEMPOOL_HEIGHT) {
+                        ret.pushKV("confirmations", 0);
+                    } else {
+                        ret.pushKV("confirmations", (int64_t)(pindex->nHeight - coin->nHeight + 1));
+                    }
+                    ret.pushKV("value", ValueFromAmount(coin->out.nValue));
+                    UniValue o(UniValue::VOBJ);
+                    ScriptToUniv(coin->out.scriptPubKey, /*out=*/o, /*include_hex=*/true, /*include_address=*/true);
+                    ret.pushKV("scriptPubKey", std::move(o));
+                    ret.pushKV("coinbase", (bool)coin->fCoinBase);
+
+                    ret.pushKV("blockHeight", int64_t(coin->nHeight));
+
+                    if (coin->nHeight > chainHeight) throw JSONRPCError(RPC_INTERNAL_ERROR, "coin height large than chain height");
+                    CBlockIndex *pblockindex = active_chain[coin->nHeight];
+                    ret.pushKV("blockHash", pblockindex->phashBlock->ToString());
+                    return ret;
+                }
+            }
+
+            int height;
+            {
+                LOCK(cs_main);
+                height = chainman.ActiveChain().Height();
+            }
+
+            for (int i = request.params[2].getInt<int>();i <= height;i++) {
+                CBlockIndex *pblockindex;
+                {
+                    LOCK(cs_main);
+                    pblockindex = chainman.ActiveChain()[i];
+                }
+
+                const std::vector<uint8_t> block_data{GetRawBlockChecked(chainman.m_blockman, *pblockindex)};
+
+                DataStream block_stream{block_data};
+                CBlock block{};
+                block_stream >> TX_WITH_WITNESS(block);
+
+                for (const auto &tx : block.vtx) {
+                    for (size_t j=0;j<tx->vin.size();j++) {
+                        const CTxIn &txin = tx->vin[j];
+                        if (txin.prevout == out) {
+                            // found it
+                            ret.pushKV("spendingTxId", UniValue(tx->GetHash().GetHex()));
+                            ret.pushKV("spendingInputIndex", UniValue(j));
+                            ret.pushKV("spendingTxHeight", UniValue(i));
+                            return ret;
+                        }
+                    }
+                }
+            }
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Utxo not found");
+        },
+    };
+}
+
 static RPCHelpMan verifychain()
 {
     return RPCHelpMan{"verifychain",
@@ -3395,6 +3510,7 @@ void RegisterBlockchainRPCCommands(CRPCTable& t)
         {"blockchain", &getdifficulty},
         {"blockchain", &getdeploymentinfo},
         {"blockchain", &gettxout},
+        {"blockchain", &getutxo},
         {"blockchain", &gettxoutsetinfo},
         {"blockchain", &pruneblockchain},
         {"blockchain", &verifychain},

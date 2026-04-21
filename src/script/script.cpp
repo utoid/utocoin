@@ -138,9 +138,9 @@ std::string GetOpName(opcodetype opcode)
     case OP_NOP1                   : return "OP_NOP1";
     case OP_CHECKLOCKTIMEVERIFY    : return "OP_CHECKLOCKTIMEVERIFY";
     case OP_CHECKSEQUENCEVERIFY    : return "OP_CHECKSEQUENCEVERIFY";
-    case OP_NOP4                   : return "OP_NOP4";
-    case OP_NOP5                   : return "OP_NOP5";
-    case OP_NOP6                   : return "OP_NOP6";
+    case OP_CHECKDATSIG            : return "OP_CHECKDATSIG";
+    case OP_CHECKDATSIGVERIFY      : return "OP_CHECKDATSIGVERIFY";
+    case OP_STAKEBURN              : return "OP_STAKEBURN";
     case OP_NOP7                   : return "OP_NOP7";
     case OP_NOP8                   : return "OP_NOP8";
     case OP_NOP9                   : return "OP_NOP9";
@@ -167,6 +167,8 @@ unsigned int CScript::GetSigOpCount(bool fAccurate) const
         if (!GetOp(pc, opcode))
             break;
         if (opcode == OP_CHECKSIG || opcode == OP_CHECKSIGVERIFY)
+            n++;
+        else if (opcode == OP_CHECKDATSIG || opcode == OP_CHECKDATSIGVERIFY )
             n++;
         else if (opcode == OP_CHECKMULTISIG || opcode == OP_CHECKMULTISIGVERIFY)
         {
