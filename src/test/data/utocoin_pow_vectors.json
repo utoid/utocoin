@@ -1,0 +1,100 @@
+{
+  "schema": "utocoin-pow-vectors-v1",
+  "mainnet": {
+    "params": {
+      "pow_algorithm": "randomx",
+      "header_size": 80,
+      "nonce_offset": 76,
+      "pow_limit": "0000307fffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "target_spacing": 60,
+      "target_timespan": 86400,
+      "difficulty_adjustment_interval": 1440,
+      "randomx_epoch": 2048,
+      "randomx_lag": 64,
+      "randomx_genesis_key": "bitcoin/946065/000000000000000000003a4522741baed3efed5f150c66235ea80a37787f65e1",
+      "genesis_block_hash": "2be5d74003871900dd786760e42a03760526d9362332df4ed18b1ffd4a548455",
+      "genesis_merkle_root": "d5284bf000899b9b0b5dc6a8c0b1c67a9ed764071ddeec62fa86713d40c6719f"
+    },
+    "key_schedule": [
+      {
+        "height": 0,
+        "key_height": 0,
+        "source": "sha256(randomx_genesis_key)"
+      },
+      {
+        "height": 63,
+        "key_height": 0,
+        "source": "sha256(randomx_genesis_key)"
+      },
+      {
+        "height": 64,
+        "key_height": 0,
+        "source": "genesis_block_hash"
+      },
+      {
+        "height": 2111,
+        "key_height": 0,
+        "source": "genesis_block_hash"
+      },
+      {
+        "height": 2112,
+        "key_height": 2048,
+        "source": "block_hash_at_key_height"
+      },
+      {
+        "height": 4159,
+        "key_height": 2048,
+        "source": "block_hash_at_key_height"
+      },
+      {
+        "height": 4160,
+        "key_height": 4096,
+        "source": "block_hash_at_key_height"
+      }
+    ],
+    "pow_hashes": [
+      {
+        "name": "mainnet-genesis",
+        "height": 0,
+        "header": {
+          "version": 1,
+          "previous_block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "merkle_root": "d5284bf000899b9b0b5dc6a8c0b1c67a9ed764071ddeec62fa86713d40c6719f",
+          "time": 1776782829,
+          "bits": "1e307fff",
+          "nonce": 49253
+        },
+        "header_hex": "0100000000000000000000000000000000000000000000000000000000000000000000009f71c6403d7186fa62ecde1d0764d79e7ac6b1c0a8c65d0b9b9b8900f04b28d5ed8de769ff7f301e65c00000",
+        "block_hash": "2be5d74003871900dd786760e42a03760526d9362332df4ed18b1ffd4a548455",
+        "randomx_key_source": "sha256(randomx_genesis_key)",
+        "randomx_key_hex": "2317c377613ac011cc4fbdccf13300e994bdde51319019fc704c4db75848e727",
+        "randomx_key_bytes_hex": "27e74858b74d4c70fc19903151debd94e90033f1ccbd4fcc11c03a6177c31723",
+        "pow_hash": "0000083c08efbd8f69811bcc03c09b03c6d3310883205b808640804411a7e71d",
+        "pow_hash_bytes_hex": "1de7a71144804086805b20830831d3c6039bc003cc1b81698fbdef083c080000",
+        "target": "0000307fff000000000000000000000000000000000000000000000000000000",
+        "valid": true
+      },
+      {
+        "name": "mainnet-height-64-synthetic",
+        "height": 64,
+        "header": {
+          "version": 1,
+          "previous_block_hash": "2be5d74003871900dd786760e42a03760526d9362332df4ed18b1ffd4a548455",
+          "merkle_root": "1111111111111111111111111111111111111111111111111111111111111111",
+          "time": 1776782889,
+          "bits": "1e307fff",
+          "nonce": 0
+        },
+        "header_hex": "010000005584544afd1f8bd14edf322336d9260576032ae4606778dd0019870340d7e52b1111111111111111111111111111111111111111111111111111111111111111298ee769ff7f301e00000000",
+        "block_hash": "c6c52d19aad22500c1872d908574c1487131fbd54a9e58f5348b0b242b485514",
+        "randomx_key_source": "genesis_block_hash",
+        "randomx_key_hex": "2be5d74003871900dd786760e42a03760526d9362332df4ed18b1ffd4a548455",
+        "randomx_key_bytes_hex": "5584544afd1f8bd14edf322336d9260576032ae4606778dd0019870340d7e52b",
+        "pow_hash": "93609a258d0cb9b67f79d8118f4be096bc3841abe14e6301ffdaca4bece78371",
+        "pow_hash_bytes_hex": "7183e7ec4bcadaff01634ee1ab4138bc96e04b8f11d8797fb6b90c8d259a6093",
+        "target": "0000307fff000000000000000000000000000000000000000000000000000000",
+        "valid": false
+      }
+    ]
+  }
+}

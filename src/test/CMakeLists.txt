@@ -135,6 +135,7 @@ target_json_data_sources(test_utocoin
   data/sighash.json
   data/tx_invalid.json
   data/tx_valid.json
+  data/utocoin_pow_vectors.json
 )
 target_raw_data_sources(test_utocoin NAMESPACE test::data
   data/asmap.raw

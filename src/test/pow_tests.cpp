@@ -5,11 +5,19 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <pow.h>
+#include <primitives/block.h>
+#include <streams.h>
+#include <test/data/utocoin_pow_vectors.json.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
+#include <univalue.h>
 #include <util/chaintype.h>
+#include <util/strencodings.h>
 
 #include <boost/test/unit_test.hpp>
+
+#include <optional>
+#include <span>
 
 BOOST_FIXTURE_TEST_SUITE(pow_tests, BasicTestingSetup)
 
@@ -207,6 +215,57 @@ BOOST_AUTO_TEST_CASE(ChainParams_TESTNET4_sanity)
 BOOST_AUTO_TEST_CASE(ChainParams_SIGNET_sanity)
 {
     sanity_check_chainparams(*m_node.args, ChainType::SIGNET);
+}
+
+BOOST_AUTO_TEST_CASE(utocoin_pow_vectors)
+{
+    UniValue vectors;
+    BOOST_REQUIRE(vectors.read(json_tests::utocoin_pow_vectors));
+
+    const auto chainParams{CreateChainParams(*m_node.args, ChainType::MAIN)};
+    const auto& consensus{chainParams->GetConsensus()};
+    const UniValue& mainnet{vectors["mainnet"]};
+    const UniValue& params{mainnet["params"]};
+
+    BOOST_CHECK_EQUAL(params["pow_algorithm"].get_str(), "randomx");
+    BOOST_CHECK_EQUAL(params["header_size"].getInt<int>(), 80);
+    BOOST_CHECK_EQUAL(params["nonce_offset"].getInt<int>(), 76);
+    BOOST_CHECK_EQUAL(params["pow_limit"].get_str(), consensus.powLimit.GetHex());
+    BOOST_CHECK_EQUAL(params["target_spacing"].getInt<int64_t>(), consensus.nPowTargetSpacing);
+    BOOST_CHECK_EQUAL(params["target_timespan"].getInt<int64_t>(), consensus.nPowTargetTimespan);
+    BOOST_CHECK_EQUAL(params["difficulty_adjustment_interval"].getInt<int64_t>(), consensus.DifficultyAdjustmentInterval());
+    BOOST_CHECK_EQUAL(params["randomx_epoch"].getInt<int>(), consensus.randomx_epoch);
+    BOOST_CHECK_EQUAL(params["randomx_lag"].getInt<int>(), consensus.randomx_lag);
+    BOOST_CHECK_EQUAL(params["randomx_genesis_key"].get_str(), consensus.randomx_genesis_key);
+    BOOST_CHECK_EQUAL(params["genesis_block_hash"].get_str(), consensus.hashGenesisBlock.GetHex());
+    BOOST_CHECK_EQUAL(params["genesis_merkle_root"].get_str(), chainParams->GenesisBlock().hashMerkleRoot.GetHex());
+
+    for (const auto& entry : mainnet["key_schedule"].getValues()) {
+        BOOST_CHECK_EQUAL(GetRandomXKeyBlockHeight(entry["height"].getInt<int>(), consensus), entry["key_height"].getInt<int>());
+    }
+
+    for (const auto& entry : mainnet["pow_hashes"].getValues()) {
+        const int height{entry["height"].getInt<int>()};
+        const std::string header_hex{entry["header_hex"].get_str()};
+        const std::optional<uint256> key{uint256::FromHex(entry["randomx_key_hex"].get_str())};
+        BOOST_REQUIRE(key);
+        BOOST_CHECK_EQUAL(HexStr(std::span{key->data(), key->size()}), entry["randomx_key_bytes_hex"].get_str());
+
+        CBlockHeader header;
+        DataStream stream{ParseHex(header_hex)};
+        stream >> header;
+
+        DataStream serialized{};
+        serialized << header;
+        BOOST_CHECK_EQUAL(HexStr(serialized), header_hex);
+        BOOST_CHECK_EQUAL(header.GetHash().GetHex(), entry["block_hash"].get_str());
+        BOOST_CHECK_EQUAL(GetRandomXPoWHash(header, *key).GetHex(), entry["pow_hash"].get_str());
+
+        const std::optional<uint256> proof_hash{GetBlockProofHash(header, height, nullptr, consensus)};
+        BOOST_REQUIRE(proof_hash);
+        BOOST_CHECK_EQUAL(proof_hash->GetHex(), entry["pow_hash"].get_str());
+        BOOST_CHECK_EQUAL(CheckProofOfWork(*proof_hash, header.nBits, consensus), entry["valid"].get_bool());
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
