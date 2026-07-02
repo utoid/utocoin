@@ -91,6 +91,7 @@ from test_framework.script_util import (
     script_to_p2sh_script,
     script_to_p2wsh_script,
 )
+from test_framework.randomx import regtest_randomx_seed_for_height
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_raises_rpc_error,
@@ -1295,9 +1296,9 @@ class TaprootTest(BitcoinTestFramework):
         extra_output_script = CScript(bytes([OP_CHECKSIG]*((MAX_BLOCK_SIGOPS_WEIGHT - sigops_weight) // WITNESS_SCALE_FACTOR)))
 
         coinbase_tx = create_coinbase(self.lastblockheight + 1, pubkey=cb_pubkey, extra_output_script=extra_output_script, fees=fees)
-        block = create_block(self.tip, coinbase_tx, self.lastblocktime + 1, txlist=txs)
+        block = create_block(self.tip, coinbase_tx, self.lastblocktime + 1, txlist=txs, rx_seed=self.rx_seed)
         witness and add_witness_commitment(block)
-        block.solve()
+        block.solve(self.rx_seed)
         block_response = node.submitblock(block.serialize().hex())
         if err_msg is not None:
             assert block_response is not None and err_msg in block_response, "Missing error message '%s' from block response '%s': %s" % (err_msg, "(None)" if block_response is None else block_response, msg)
@@ -1314,6 +1315,7 @@ class TaprootTest(BitcoinTestFramework):
         # Initialize variables used by block_submit().
         self.lastblockhash = node.getbestblockhash()
         self.tip = int(self.lastblockhash, 16)
+        self.rx_seed = node.getblockheader(self.lastblockhash).get("rx_seed") or self.lastblockhash
         block = node.getblock(self.lastblockhash)
         self.lastblockheight = block['height']
         self.lastblocktime = block['time']
@@ -1528,6 +1530,7 @@ class TaprootTest(BitcoinTestFramework):
 
         # Deterministically mine coins to OP_TRUE in block 1
         assert_equal(self.nodes[0].getblockcount(), 0)
+
         coinbase = CTransaction()
         coinbase.version = 1
         coinbase.vin = [CTxIn(COutPoint(0, 0xffffffff), CScript([OP_1, OP_1]), SEQUENCE_FINAL)]
@@ -1535,10 +1538,13 @@ class TaprootTest(BitcoinTestFramework):
         coinbase.nLockTime = 0
         coinbase.rehash()
         assert coinbase.hash == "f60c73405d499a956d3162e3483c395526ef78286458a4cb17b125aa92e49b20"
-        # Mine it
-        block = create_block(hashprev=int(self.nodes[0].getbestblockhash(), 16), coinbase=coinbase)
-        block.rehash()
-        block.solve()
+        # Mine it. The seed for block at height 1 in regtest is
+        # SHA256(randomx_genesis_key), not the genesis block hash, so use the
+        # helper that mirrors C++ GetRandomXKey.
+        prev_hash = self.nodes[0].getbestblockhash()
+        rx_seed = regtest_randomx_seed_for_height(1, self.nodes[0])
+        block = create_block(hashprev=int(prev_hash, 16), coinbase=coinbase, rx_seed=rx_seed)
+        block.solve(rx_seed)
         self.nodes[0].submitblock(block.serialize().hex())
         assert_equal(self.nodes[0].getblockcount(), 1)
         self.generate(self.nodes[0], COINBASE_MATURITY)

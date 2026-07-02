@@ -52,12 +52,11 @@ class BaseNode(P2PInterface):
         super().__init__()
         # Stores a dictionary of all blocks received
         self.block_receive_map = defaultdict(int)
-
     def on_block(self, message):
         """Override the standard on_block callback
 
         Store the hash of a received block in the dictionary."""
-        message.block.calc_sha256()
+        message.block.calc_sha256(None)
         self.block_receive_map[message.block.sha256] += 1
 
     def on_inv(self, message):
@@ -149,6 +148,7 @@ class ExampleTest(BitcoinTestFramework):
 
         # Create P2P connections will wait for a verack to make sure the connection is fully up
         peer_messaging = self.nodes[0].add_p2p_connection(BaseNode())
+        peer_messaging.node = self.nodes[0]
 
         # Generating a block on one of the nodes will get us out of IBD
         blocks = [int(self.generate(self.nodes[0], sync_fun=lambda: self.sync_all(self.nodes[0:2]), nblocks=1)[0], 16)]
@@ -171,8 +171,10 @@ class ExampleTest(BitcoinTestFramework):
         self.custom_method()
 
         self.log.info("Create some blocks")
-        self.tip = int(self.nodes[0].getbestblockhash(), 16)
-        self.block_time = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['time'] + 1
+        best_block_hash = self.nodes[0].getbestblockhash()
+        self.tip = int(best_block_hash, 16)
+        self.block_time = self.nodes[0].getblock(best_block_hash)['time'] + 1
+        rx_seed = self.nodes[0].getblockheader(best_block_hash).get("rx_seed") or best_block_hash
 
         height = self.nodes[0].getblockcount()
 
@@ -180,8 +182,8 @@ class ExampleTest(BitcoinTestFramework):
             # Use the blocktools functionality to manually build a block.
             # Calling the generate() rpc is easier, but this allows us to exactly
             # control the blocks and transactions.
-            block = create_block(self.tip, create_coinbase(height+1), self.block_time)
-            block.solve()
+            block = create_block(self.tip, create_coinbase(height+1), self.block_time, rx_seed=rx_seed)
+            block.solve(rx_seed)
             block_message = msg_block(block)
             # Send message is used to send a P2P message to the node over our P2PInterface
             peer_messaging.send_message(block_message)
@@ -203,6 +205,7 @@ class ExampleTest(BitcoinTestFramework):
         self.nodes[0].disconnect_p2ps()
 
         peer_receiving = self.nodes[2].add_p2p_connection(BaseNode())
+        peer_receiving.node = self.nodes[2]
 
         self.log.info("Test that node2 propagates all the blocks to us")
 

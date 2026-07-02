@@ -48,9 +48,12 @@ class MutatedBlocksTest(BitcoinTestFramework):
         # The self-transfer transaction is needed to trigger a compact block
         # `getblocktxn` roundtrip.
         tx = self.wallet.create_self_transfer()["tx"]
-        block = create_block(tmpl=self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS), txlist=[tx])
+        tmpl = self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)
+        prev_hash = tmpl['previousblockhash']
+        rx_seed = self.nodes[0].getblockheader(prev_hash).get("rx_seed") or prev_hash
+        block = create_block(tmpl=tmpl, txlist=[tx], rx_seed=rx_seed)
         add_witness_commitment(block)
-        block.solve()
+        block.solve(rx_seed)
 
         # Create mutated version of the block by changing the transaction
         # version on the self-transfer.
@@ -102,7 +105,7 @@ class MutatedBlocksTest(BitcoinTestFramework):
         attacker = self.nodes[0].add_p2p_connection(P2PInterface())
         block_missing_prev = copy.deepcopy(block)
         block_missing_prev.hashPrevBlock = 123
-        block_missing_prev.solve()
+        block_missing_prev.solve(rx_seed)
 
         # Check that non-connecting block causes disconnect
         assert_equal(len(self.nodes[0].getpeerinfo()), 2)

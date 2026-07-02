@@ -206,10 +206,10 @@ ReadStatus PartiallyDownloadedBlock::FillBlock(CBlock& block, const std::vector<
         return READ_STATUS_INVALID;
 
     BlockValidationState state;
-    CheckBlockFn check_block = m_check_block_mock ? m_check_block_mock : CheckBlock;
-    if (!check_block(block, state, Params().GetConsensus(), /*fCheckPoW=*/true, /*fCheckMerkleRoot=*/true)) {
+    CheckBlockFn check_block = m_check_block_mock ? m_check_block_mock : CheckBlockContextFree;
+    if (!check_block(block, state, Params().GetConsensus(), /*fCheckMerkleRoot=*/true)) {
         // TODO: We really want to just check merkle tree manually here,
-        // but that is expensive, and CheckBlock caches a block's
+        // but that is expensive, and CheckBlockContextFree caches a block's
         // "checked-status" (in the CBlock?). CBlock should be able to
         // check its own merkle root and cache that check.
         if (state.GetResult() == BlockValidationResult::BLOCK_MUTATED)

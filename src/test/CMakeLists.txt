@@ -151,6 +151,7 @@ target_link_libraries(test_utocoin
   secp256k1
   Boost::headers
   libevent::extra
+  randomx
 )
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/utocoin/test utocoin)

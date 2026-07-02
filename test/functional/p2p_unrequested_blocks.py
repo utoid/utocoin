@@ -56,6 +56,7 @@ import time
 from test_framework.blocktools import create_block, create_coinbase, create_tx_with_script
 from test_framework.messages import CBlockHeader, CInv, MSG_BLOCK, msg_block, msg_headers, msg_inv
 from test_framework.p2p import p2p_lock, P2PInterface
+from test_framework.randomx import regtest_randomx_seed_for_height
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -92,8 +93,10 @@ class AcceptBlockTest(BitcoinTestFramework):
         blocks_h2 = []  # the height 2 blocks on each node's chain
         block_time = int(time.time()) + 1
         for i in range(2):
-            blocks_h2.append(create_block(tips[i], create_coinbase(2), block_time))
-            blocks_h2[i].solve()
+            prev_hash = self.nodes[i].getbestblockhash()
+            rx_seed = self.nodes[i].getblockheader(prev_hash).get("rx_seed") or prev_hash
+            blocks_h2.append(create_block(tips[i], create_coinbase(2), block_time, rx_seed=rx_seed))
+            blocks_h2[i].solve(rx_seed)
             block_time += 1
         test_node.send_and_ping(msg_block(blocks_h2[0]))
 
@@ -108,9 +111,11 @@ class AcceptBlockTest(BitcoinTestFramework):
         self.log.info("First height 2 block accepted by node0; correctly rejected by node1")
 
         # 3. Send another block that builds on genesis.
-        block_h1f = create_block(int("0x" + self.nodes[0].getblockhash(0), 0), create_coinbase(1), block_time)
+        genesis_hash = self.nodes[0].getblockhash(0)
+        rx_seed_genesis = self.nodes[0].getblockheader(genesis_hash).get("rx_seed") or genesis_hash
+        block_h1f = create_block(int("0x" + genesis_hash, 0), create_coinbase(1), block_time, rx_seed=rx_seed_genesis)
         block_time += 1
-        block_h1f.solve()
+        block_h1f.solve(rx_seed_genesis)
         test_node.send_and_ping(msg_block(block_h1f))
 
         tip_entry_found = False
@@ -122,9 +127,10 @@ class AcceptBlockTest(BitcoinTestFramework):
         assert_raises_rpc_error(-1, "Block not available (not fully downloaded)", self.nodes[0].getblock, block_h1f.hash)
 
         # 4. Send another two block that build on the fork.
-        block_h2f = create_block(block_h1f.sha256, create_coinbase(2), block_time)
+        # Heights 2..3 still use the genesis-key seed (height < randomx_lag).
+        block_h2f = create_block(block_h1f.sha256, create_coinbase(2), block_time, rx_seed=rx_seed_genesis)
         block_time += 1
-        block_h2f.solve()
+        block_h2f.solve(rx_seed_genesis)
         test_node.send_and_ping(msg_block(block_h2f))
 
         # Since the earlier block was not processed by node, the new block
@@ -141,8 +147,8 @@ class AcceptBlockTest(BitcoinTestFramework):
         self.log.info("Second height 2 block accepted, but not reorg'ed to")
 
         # 4b. Now send another block that builds on the forking chain.
-        block_h3 = create_block(block_h2f.sha256, create_coinbase(3), block_h2f.nTime+1)
-        block_h3.solve()
+        block_h3 = create_block(block_h2f.sha256, create_coinbase(3), block_h2f.nTime+1, rx_seed=rx_seed_genesis)
+        block_h3.solve(rx_seed_genesis)
         test_node.send_and_ping(msg_block(block_h3))
 
         # Since the earlier block was not processed by node, the new block
@@ -161,11 +167,15 @@ class AcceptBlockTest(BitcoinTestFramework):
 
         # 4c. Now mine 288 more blocks and deliver; all should be processed but
         # the last (height-too-high) on node (as long as it is not missing any headers)
+        # The chain crosses the regtest randomx_lag boundary (height 64), so seed
+        # must be recomputed per height.
         tip = block_h3
         all_blocks = []
         for i in range(288):
-            next_block = create_block(tip.sha256, create_coinbase(i + 4), tip.nTime+1)
-            next_block.solve()
+            height = i + 4
+            seed = regtest_randomx_seed_for_height(height, self.nodes[0])
+            next_block = create_block(tip.sha256, create_coinbase(height), tip.nTime+1, rx_seed=seed)
+            next_block.solve(seed)
             all_blocks.append(next_block)
             tip = next_block
 
@@ -234,17 +244,19 @@ class AcceptBlockTest(BitcoinTestFramework):
         self.log.info("Successfully reorged to longer chain")
 
         # 8. Create a chain which is invalid at a height longer than the
-        # current chain, but which has more blocks on top of that
-        block_289f = create_block(all_blocks[284].sha256, create_coinbase(289), all_blocks[284].nTime+1)
-        block_289f.solve()
-        block_290f = create_block(block_289f.sha256, create_coinbase(290), block_289f.nTime+1)
-        block_290f.solve()
+        # current chain, but which has more blocks on top of that.
+        # Heights 289..292 are >= randomx_lag (64), seed = genesis block hash.
+        seed_high = regtest_randomx_seed_for_height(289, self.nodes[0])
+        block_289f = create_block(all_blocks[284].sha256, create_coinbase(289), all_blocks[284].nTime+1, rx_seed=seed_high)
+        block_289f.solve(seed_high)
+        block_290f = create_block(block_289f.sha256, create_coinbase(290), block_289f.nTime+1, rx_seed=seed_high)
+        block_290f.solve(seed_high)
         # block_291 spends a coinbase below maturity!
         tx_to_add = create_tx_with_script(block_290f.vtx[0], 0, script_sig=b"42", amount=1)
-        block_291 = create_block(block_290f.sha256, create_coinbase(291), block_290f.nTime+1, txlist=[tx_to_add])
-        block_291.solve()
-        block_292 = create_block(block_291.sha256, create_coinbase(292), block_291.nTime+1)
-        block_292.solve()
+        block_291 = create_block(block_290f.sha256, create_coinbase(291), block_290f.nTime+1, txlist=[tx_to_add], rx_seed=seed_high)
+        block_291.solve(seed_high)
+        block_292 = create_block(block_291.sha256, create_coinbase(292), block_291.nTime+1, rx_seed=seed_high)
+        block_292.solve(seed_high)
 
         # Now send all the headers on the chain and enough blocks to trigger reorg
         headers_message = msg_headers()
@@ -283,8 +295,8 @@ class AcceptBlockTest(BitcoinTestFramework):
         assert_equal(self.nodes[0].getblock(block_291.hash)["confirmations"], -1)
 
         # Now send a new header on the invalid chain, indicating we're forked off, and expect to get disconnected
-        block_293 = create_block(block_292.sha256, create_coinbase(293), block_292.nTime+1)
-        block_293.solve()
+        block_293 = create_block(block_292.sha256, create_coinbase(293), block_292.nTime+1, rx_seed=seed_high)
+        block_293.solve(seed_high)
         headers_message = msg_headers()
         headers_message.headers.append(CBlockHeader(block_293))
         test_node.send_message(headers_message)

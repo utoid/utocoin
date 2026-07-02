@@ -35,8 +35,38 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define RANDOMX_HASH_SIZE 32
 #define RANDOMX_DATASET_ITEM_SIZE 64
 
+/*
+ * Cross-platform DLL export annotations.
+ *
+ *   - When building the SHARED variant of librandomx (the `randomx_shared`
+ *     CMake target), define RANDOMX_BUILDING_SHARED so MSVC marks symbols as
+ *     dllexport. mingw/gcc/clang default to exporting all symbols, but the
+ *     visibility("default") attribute keeps it correct even under
+ *     -fvisibility=hidden.
+ *   - Consumers linking dynamically against librandomx on Windows can define
+ *     RANDOMX_USING_SHARED to pick up dllimport for slightly better codegen
+ *     (this is purely an optimisation; ctypes does not need it).
+ *   - The default (no macros defined) yields an empty annotation, which is
+ *     the right thing for static linking on any platform.
+ */
 #ifndef RANDOMX_EXPORT
-#define RANDOMX_EXPORT
+  #if defined(_WIN32) || defined(__CYGWIN__)
+    #if defined(RANDOMX_BUILDING_SHARED)
+      #define RANDOMX_EXPORT __declspec(dllexport)
+    #elif defined(RANDOMX_USING_SHARED)
+      #define RANDOMX_EXPORT __declspec(dllimport)
+    #else
+      #define RANDOMX_EXPORT
+    #endif
+  #elif defined(__GNUC__) || defined(__clang__)
+    #if defined(RANDOMX_BUILDING_SHARED) || defined(RANDOMX_USING_SHARED)
+      #define RANDOMX_EXPORT __attribute__((visibility("default")))
+    #else
+      #define RANDOMX_EXPORT
+    #endif
+  #else
+    #define RANDOMX_EXPORT
+  #endif
 #endif
 
 typedef enum {

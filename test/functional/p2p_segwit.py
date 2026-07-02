@@ -229,15 +229,17 @@ class SegWitTest(BitcoinTestFramework):
         tip = self.nodes[0].getbestblockhash()
         height = self.nodes[0].getblockcount() + 1
         block_time = self.nodes[0].getblockheader(tip)["mediantime"] + 1
-        block = create_block(int(tip, 16), create_coinbase(height), block_time)
-        block.rehash()
+
+        rx_seed = self.nodes[0].getblockheader(tip).get("rx_seed") or tip
+        block = create_block(int(tip, 16), create_coinbase(height), block_time, rx_seed=rx_seed)
+        block.rehash(rx_seed)
         return block
 
     def update_witness_block_with_transactions(self, block, tx_list, nonce=0):
         """Add list of transactions to block, adds witness commitment, then solves."""
         block.vtx.extend(tx_list)
         add_witness_commitment(block, nonce)
-        block.solve()
+        block.solve(block.rx_seed)
 
     def run_test(self):
         # Setup the p2p connections
@@ -302,7 +304,7 @@ class SegWitTest(BitcoinTestFramework):
         # let it mature, then try to spend it.
 
         block = self.build_next_block()
-        block.solve()
+        block.solve(block.rx_seed)
         self.test_node.send_and_ping(msg_no_witness_block(block))  # make sure the block was processed
         txid = block.vtx[0].sha256
 
@@ -369,7 +371,7 @@ class SegWitTest(BitcoinTestFramework):
         # Test announcing a block via inv results in a getdata, and that
         # announcing a block with a header results in a getdata
         block1 = self.build_next_block()
-        block1.solve()
+        block1.solve(block1.rx_seed)
 
         # Send an empty headers message, to clear out any prior getheaders
         # messages that our peer may be waiting for us on.
@@ -380,7 +382,7 @@ class SegWitTest(BitcoinTestFramework):
         test_witness_block(self.nodes[0], self.test_node, block1, True)
 
         block2 = self.build_next_block()
-        block2.solve()
+        block2.solve(block2.rx_seed)
 
         self.test_node.announce_block_and_wait_for_getdata(block2, use_header=True)
         assert self.test_node.last_message["getdata"].inv[0].type == blocktype
@@ -431,7 +433,7 @@ class SegWitTest(BitcoinTestFramework):
 
             # Upgraded node should not ask for blocks from unupgraded
             block4 = self.build_next_block()
-            block4.solve()
+            block4.solve(block4.rx_seed)
             self.old_node.getdataset = set()
 
             # Blocks can be requested via direct-fetch (immediately upon processing the announcement)
@@ -745,7 +747,7 @@ class SegWitTest(BitcoinTestFramework):
         # First try a correct witness commitment.
         block = self.build_next_block()
         add_witness_commitment(block)
-        block.solve()
+        block.solve(block.rx_seed)
 
         # Test the test -- witness serialization should be different
         assert msg_block(block).serialize() != msg_no_witness_block(block).serialize()
@@ -756,7 +758,7 @@ class SegWitTest(BitcoinTestFramework):
         # Try to tweak the nonce
         block_2 = self.build_next_block()
         add_witness_commitment(block_2, nonce=28)
-        block_2.solve()
+        block_2.solve(block_2.rx_seed)
 
         # The commitment should have changed!
         assert block_2.vtx[0].vout[-1] != block.vtx[0].vout[-1]
@@ -790,7 +792,7 @@ class SegWitTest(BitcoinTestFramework):
         block_3.vtx[0].vout.append(CTxOut(0, CScript([OP_RETURN, WITNESS_COMMITMENT_HEADER + ser_uint256(2), 10])))
         block_3.vtx[0].rehash()
         block_3.hashMerkleRoot = block_3.calc_merkle_root()
-        block_3.solve()
+        block_3.solve(block_3.rx_seed)
 
         test_witness_block(self.nodes[0], self.test_node, block_3, accepted=False, reason='bad-witness-merkle-match')
 
@@ -804,7 +806,7 @@ class SegWitTest(BitcoinTestFramework):
         block_3.vtx[0].rehash()
         block_3.hashMerkleRoot = block_3.calc_merkle_root()
         assert len(block_3.vtx[0].vout) == 4  # 3 OP_returns
-        block_3.solve()
+        block_3.solve(block_3.rx_seed)
         test_witness_block(self.nodes[0], self.test_node, block_3, accepted=True)
 
         # Finally test that a block with no witness transactions can
@@ -816,7 +818,7 @@ class SegWitTest(BitcoinTestFramework):
         tx3.rehash()
         block_4.vtx.append(tx3)
         block_4.hashMerkleRoot = block_4.calc_merkle_root()
-        block_4.solve()
+        block_4.solve(block_4.rx_seed)
         test_witness_block(self.nodes[0], self.test_node, block_4, with_witness=False, accepted=True)
 
         # Update available utxo's for use in later test.
@@ -831,7 +833,7 @@ class SegWitTest(BitcoinTestFramework):
         # marked bad.
         block = self.build_next_block()
         add_witness_commitment(block)
-        block.solve()
+        block.solve(block.rx_seed)
 
         block.vtx[0].wit.vtxinwit[0].scriptWitness.stack.append(b'a' * 5000000)
         assert block.get_weight() > MAX_BLOCK_WEIGHT
@@ -852,7 +854,7 @@ class SegWitTest(BitcoinTestFramework):
         # result in a block permanently marked bad.
         block = self.build_next_block()
         add_witness_commitment(block)
-        block.solve()
+        block.solve(block.rx_seed)
 
         # Change the nonce -- should not cause the block to be permanently
         # failed
@@ -916,7 +918,7 @@ class SegWitTest(BitcoinTestFramework):
 
         block.vtx[0].vout.pop()  # Remove old commitment
         add_witness_commitment(block)
-        block.solve()
+        block.solve(block.rx_seed)
         assert_equal(block.get_weight(), MAX_BLOCK_WEIGHT + 1)
         # Make sure that our test case would exceed the old max-network-message
         # limit
@@ -929,7 +931,7 @@ class SegWitTest(BitcoinTestFramework):
         block.vtx[-1].wit.vtxinwit[0].scriptWitness.stack[0] = b'a' * (cur_length - 1)
         block.vtx[0].vout.pop()
         add_witness_commitment(block)
-        block.solve()
+        block.solve(block.rx_seed)
         assert block.get_weight() == MAX_BLOCK_WEIGHT
 
         test_witness_block(self.nodes[0], self.test_node, block, accepted=True)
@@ -947,14 +949,14 @@ class SegWitTest(BitcoinTestFramework):
         # This shouldn't possibly work.
         add_witness_commitment(block, nonce=1)
         block.vtx[0].wit = CTxWitness()  # drop the nonce
-        block.solve()
+        block.solve(block.rx_seed)
         assert_equal('bad-witness-merkle-match', self.nodes[0].submitblock(block.serialize().hex()))
         assert self.nodes[0].getbestblockhash() != block.hash
 
         # Now redo commitment with the standard nonce, but let bitcoind fill it in.
         add_witness_commitment(block, nonce=0)
         block.vtx[0].wit = CTxWitness()
-        block.solve()
+        block.solve(block.rx_seed)
         assert_equal(None, self.nodes[0].submitblock(block.serialize().hex()))
         assert_equal(self.nodes[0].getbestblockhash(), block.hash)
 
@@ -964,7 +966,7 @@ class SegWitTest(BitcoinTestFramework):
 
         add_witness_commitment(block_2)
 
-        block_2.solve()
+        block_2.solve(block_2.rx_seed)
 
         # Drop commitment and nonce -- submitblock should not fill in.
         block_2.vtx[0].vout.pop()
@@ -1002,7 +1004,7 @@ class SegWitTest(BitcoinTestFramework):
         block.vtx[1].vin[0].scriptSig = CScript([OP_0])
         block.vtx[1].rehash()
         add_witness_commitment(block)
-        block.solve()
+        block.solve(block.rx_seed)
 
         test_witness_block(self.nodes[0], self.test_node, block, accepted=True)
 
@@ -1030,7 +1032,7 @@ class SegWitTest(BitcoinTestFramework):
         tx2.wit.vtxinwit[1].scriptWitness.stack = []
         tx2.rehash()
         add_witness_commitment(block)
-        block.solve()
+        block.solve(block.rx_seed)
 
         # This has extra signature data for a witness input, so it should fail.
         test_witness_block(self.nodes[0], self.test_node, block, accepted=False,
@@ -1041,7 +1043,7 @@ class SegWitTest(BitcoinTestFramework):
         tx2.vin[0].scriptSig = b""
         tx2.rehash()
         add_witness_commitment(block)
-        block.solve()
+        block.solve(block.rx_seed)
 
         test_witness_block(self.nodes[0], self.test_node, block, accepted=True)
 
@@ -1079,7 +1081,7 @@ class SegWitTest(BitcoinTestFramework):
         tx2.wit.vtxinwit[0].scriptWitness.stack[0] = b'a' * (MAX_SCRIPT_ELEMENT_SIZE)
 
         add_witness_commitment(block)
-        block.solve()
+        block.solve(block.rx_seed)
         test_witness_block(self.nodes[0], self.test_node, block, accepted=True)
 
         # Update the utxo for later tests

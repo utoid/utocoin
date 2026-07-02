@@ -3,3 +3,8 @@
 193.149.180.123:8333
 157.230.47.200:8333
 156.59.223.188:8333
+lld46xkbk4k4ujceckedz5c53mztt6pmwlxt4td77j24zqiag74gcgqd.onion:8333
+xyu7oesyobxea23zloa6vhaoxo6pyru6vkn3oho2phgcjgw6zpqd32id.onion:8333
+b6dy62brjvlfqkhf5xw77vg7t2ptzrcrwgl7dlofzfflyrypsjq2cxqd.onion:8333
+7pmfu4d7uaecvd2tlcop2ea7dp43vp4dewli4nmmv5xuiejfjbzsrhqd.onion:8333
+slotuonloupip72rzguggmrh376iysl5tvjq4gqltehuabjgauh7mwqd.onion:8333

@@ -64,7 +64,11 @@ class MiningMainnetTest(BitcoinTestFramework):
         block.nNonce = blocks['nonces'][height - 1]
         block.vtx = [create_coinbase(height=height, script_pubkey=bytes.fromhex(COINBASE_SCRIPT_PUBKEY), retarget_period=2016)]
         block.hashMerkleRoot = block.calc_merkle_root()
-        block.rehash()
+
+        prev_block_info = node.getblockheader(prev_hash)
+        rx_seed = prev_block_info.get("rx_seed") or prev_hash
+        block.rehash(rx_seed)
+
         block_hex = block.serialize(with_witness=False).hex()
         self.log.debug(block_hex)
         assert_equal(node.submitblock(block_hex), None)

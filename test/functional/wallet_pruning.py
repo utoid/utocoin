@@ -43,18 +43,22 @@ class WalletPruningTest(BitcoinTestFramework):
         self.nTime = max(self.nTime, int(best_block["time"])) + 1
         previousblockhash = int(best_block["hash"], 16)
         big_script = CScript([OP_RETURN] + [OP_TRUE] * 950000)
+
+        best_block_hash = node.getbestblockhash()
+        rx_seed = best_block.get("rx_seed") or best_block_hash
+
         # Set mocktime to accept all future blocks
         for i in self.nodes:
             if i.running:
                 i.setmocktime(self.nTime + 600 * n)
         for _ in range(n):
-            block = create_block(hashprev=previousblockhash, ntime=self.nTime, coinbase=create_coinbase(height, script_pubkey=big_script))
-            block.solve()
+            block = create_block(hashprev=previousblockhash, ntime=self.nTime, coinbase=create_coinbase(height, script_pubkey=big_script), rx_seed=rx_seed)
+            block.solve(rx_seed)
 
             # Submit to the node
             node.submitblock(block.serialize().hex())
 
-            previousblockhash = block.sha256
+            previousblockhash = int(block.hash, 16)
             height += 1
 
             # Simulate 10 minutes of work time per block

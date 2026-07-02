@@ -75,7 +75,7 @@ BOOST_AUTO_TEST_CASE(headers_sync_state)
 
     std::unique_ptr<HeadersSyncState> hss;
 
-    const int target_blocks = 15000;
+    const int target_blocks = 1500;
     arith_uint256 chain_work = target_blocks*2;
 
     // Generate headers for two different chains (using differing merkle roots

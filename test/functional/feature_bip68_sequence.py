@@ -329,9 +329,11 @@ class BIP68Test(BitcoinTestFramework):
         # diagram above).
         # This would cause tx2 to be added back to the mempool, which in turn causes
         # tx3 to be removed.
+        prev_hash = tmpl['previousblockhash']
+        rx_seed = self.nodes[0].getblockheader(prev_hash).get("rx_seed") or prev_hash
         for i in range(2):
-            block = create_block(tmpl=tmpl, ntime=cur_time)
-            block.solve()
+            block = create_block(tmpl=tmpl, ntime=cur_time, rx_seed=rx_seed)
+            block.solve(rx_seed)
             tip = block.sha256
             assert_equal(None if i == 1 else 'inconclusive', self.nodes[0].submitblock(block.serialize().hex()))
             tmpl = self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)
@@ -386,9 +388,11 @@ class BIP68Test(BitcoinTestFramework):
         assert_raises_rpc_error(-26, NOT_FINAL_ERROR, self.wallet.sendrawtransaction, from_node=self.nodes[0], tx_hex=tx3.serialize().hex())
 
         # make a block that violates bip68; ensure that the tip updates
-        block = create_block(tmpl=self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS), txlist=[tx1, tx2, tx3])
+        best_hash = self.nodes[0].getbestblockhash()
+        rx_seed = self.nodes[0].getblockheader(best_hash).get("rx_seed") or best_hash
+        block = create_block(tmpl=self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS), txlist=[tx1, tx2, tx3], rx_seed=rx_seed)
         add_witness_commitment(block)
-        block.solve()
+        block.solve(rx_seed)
 
         assert_equal(None, self.nodes[0].submitblock(block.serialize().hex()))
         assert_equal(self.nodes[0].getbestblockhash(), block.hash)

@@ -72,7 +72,7 @@ public:
     std::vector<CTransactionRef> vtx;
 
     // Memory-only flags for caching expensive checks
-    mutable bool fChecked;                            // CheckBlock()
+    mutable bool fChecked;                            // CheckBlockContextFree()
     mutable bool m_checked_witness_commitment{false}; // CheckWitnessCommitment()
     mutable bool m_checked_merkle_root{false};        // CheckMerkleRoot()
 

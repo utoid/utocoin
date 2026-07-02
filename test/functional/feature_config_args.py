@@ -146,9 +146,11 @@ class ConfArgsTest(BitcoinTestFramework):
 
         main_conf_file_path = self.nodes[0].datadir_path / "bitcoin_main.conf"
         util.write_config(main_conf_file_path, n=0, chain='', extra_config=f'includeconf={inc_conf_file_path}\n')
+        # utocoin removes the upstream restriction that bans `-acceptnonstdtxn`
+        # on the main chain (see src/node/mempool_args.cpp), so this assertion
+        # is skipped.
         with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
-            conf.write('acceptnonstdtxn=1\n')
-        self.nodes[0].assert_start_raises_init_error(extra_args=[f"-conf={main_conf_file_path}", "-allowignoredconf"], expected_msg='Error: acceptnonstdtxn is not currently supported for main chain')
+            conf.write('# acceptnonstdtxn=1 (skipped: utocoin allows on main)\n')
 
         with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
             conf.write('nono\n')
@@ -471,26 +473,16 @@ class ConfArgsTest(BitcoinTestFramework):
         util.write_config(conf_file, n=0, chain="regtest")  # Reset to regtest
 
     def test_testnet3_deprecation_msg(self):
-        self.log.info("Test testnet3 deprecation warning")
-        t3_warning_log = "Warning: Support for testnet3 is deprecated and will be removed in an upcoming release. Consider switching to testnet4."
-
-        self.log.debug("Testnet3 node will log the deprecation warning")
-        self.nodes[0].chain = 'testnet3'
-        self.nodes[0].replace_in_config([('regtest=', 'testnet='), ('[regtest]', '[test]')])
-        with self.nodes[0].assert_debug_log([t3_warning_log]):
-            self.start_node(0)
-        self.stop_node(0)
-
-        self.log.debug("Testnet4 node will not log the deprecation warning")
-        self.nodes[0].chain = 'testnet4'
-        self.nodes[0].replace_in_config([('testnet=', 'testnet4='), ('[test]', '[testnet4]')])
-        with self.nodes[0].assert_debug_log([], unexpected_msgs=[t3_warning_log]):
-            self.start_node(0)
-        self.stop_node(0)
-
-        self.log.debug("Reset to regtest")
-        self.nodes[0].chain = 'regtest'
-        self.nodes[0].replace_in_config([('testnet4=', 'regtest='), ('[testnet4]', '[regtest]')])
+        # utocoin does not currently maintain testnet3/testnet4/signet (their
+        # genesis blocks were not re-mined under RandomX, so the daemon
+        # cannot load them). Rather than fail noisily, skip this sub-test
+        # with an explicit notice so the rest of feature_config_args still
+        # exercises regtest/mainnet code paths.
+        self.log.warning(
+            "Skipping test_testnet3_deprecation_msg: utocoin testnet3 / "
+            "testnet4 genesis blocks are not RandomX-mineable and the "
+            "networks are currently unmaintained.")
+        return
 
     def run_test(self):
         self.test_log_buffer()

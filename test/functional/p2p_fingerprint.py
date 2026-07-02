@@ -34,11 +34,12 @@ class P2PFingerprintTest(BitcoinTestFramework):
     # Build a chain of blocks on top of given one
     def build_chain(self, nblocks, prev_hash, prev_height, prev_median_time):
         blocks = []
+        rx_seed = self.nodes[0].getblockheader(prev_hash).get("rx_seed") or prev_hash
         for _ in range(nblocks):
             coinbase = create_coinbase(prev_height + 1)
             block_time = prev_median_time + 1
-            block = create_block(int(prev_hash, 16), coinbase, block_time)
-            block.solve()
+            block = create_block(int(prev_hash, 16), coinbase, block_time, rx_seed=rx_seed)
+            block.solve(rx_seed)
 
             blocks.append(block)
             prev_hash = block.hash
@@ -65,8 +66,18 @@ class P2PFingerprintTest(BitcoinTestFramework):
     def run_test(self):
         node0 = self.nodes[0].add_p2p_connection(P2PInterface())
 
-        # Set node time to 60 days ago
-        self.nodes[0].setmocktime(int(time.time()) - 60 * 24 * 60 * 60)
+        # Set node time as far back as we can without going before the regtest
+        # genesis block's timestamp — otherwise mining produces blocks whose
+        # nTime (clamped to max(GetMedianTimePast()+1, NodeClock::now())) ends
+        # up after NodeClock::now() and fails the "time-too-new" check.
+        # utocoin's regtest genesis is dated 2026-04-21; the upstream
+        # default of "now - 60 days" usually lands before genesis on a freshly
+        # built tree.
+        genesis_time = self.nodes[0].getblockheader(self.nodes[0].getblockhash(0))['time']
+        target_past = int(time.time()) - 60 * 24 * 60 * 60
+        # Stay strictly above genesis_time so the daemon's NodeClock>=MTP
+        # invariant holds.
+        self.nodes[0].setmocktime(max(target_past, genesis_time + 1))
 
         # Generating a chain of 10 blocks
         block_hashes = self.generatetoaddress(self.nodes[0], 10, self.nodes[0].get_deterministic_priv_key().address)

@@ -27,9 +27,12 @@ import random
 import socket
 import time
 import unittest
+import os
 
 from test_framework.crypto.siphash import siphash256
+from test_framework.randomx import randomx_hash
 from test_framework.util import assert_equal
+from io import BytesIO
 
 MAX_LOCATOR_SZ = 101
 MAX_BLOCK_WEIGHT = 4000000
@@ -39,7 +42,7 @@ MAX_BLOOM_FILTER_SIZE = 36000
 MAX_BLOOM_HASH_FUNCS = 50
 
 COIN = 100000000  # 1 btc in satoshis
-MAX_MONEY = 21000000 * COIN
+MAX_MONEY = 2100000000 * COIN
 
 MAX_BIP125_RBF_SEQUENCE = 0xfffffffd  # Sequence number that is rbf-opt-in (BIP 125) and csv-opt-out (BIP 68)
 SEQUENCE_FINAL = 0xffffffff  # Sequence number that disables nLockTime if set for every input of a tx
@@ -95,7 +98,6 @@ def sha3(s):
 def hash256(s):
     return sha256(sha256(s))
 
-
 def ser_compact_size(l):
     r = b""
     if l < 253:
@@ -140,6 +142,8 @@ def ser_uint256(u):
 def uint256_from_str(s):
     return int.from_bytes(s[:32], 'little')
 
+def uint256_to_str(i: int) -> bytes:
+    return i.to_bytes(32, 'little')
 
 def uint256_from_compact(c):
     nbytes = (c >> 24) & 0xFF
@@ -664,7 +668,7 @@ class CTransaction:
     def is_valid(self):
         self.calc_sha256()
         for tout in self.vout:
-            if tout.nValue < 0 or tout.nValue > 21000000 * COIN:
+            if tout.nValue < 0 or tout.nValue > 2100000000 * COIN:
                 return False
         return True
 
@@ -685,8 +689,8 @@ class CTransaction:
 
 class CBlockHeader:
     __slots__ = ("hash", "hashMerkleRoot", "hashPrevBlock", "nBits", "nNonce",
-                 "nTime", "nVersion", "sha256")
-
+                 "nTime", "nVersion", "sha256", "rx_seed", "powhash", "powhashhex")
+    
     def __init__(self, header=None):
         if header is None:
             self.set_null()
@@ -699,7 +703,12 @@ class CBlockHeader:
             self.nNonce = header.nNonce
             self.sha256 = header.sha256
             self.hash = header.hash
-            self.calc_sha256()
+            self.rx_seed = getattr(header, 'rx_seed', None)
+            self.powhash = getattr(header, 'powhash', None)
+            self.powhashhex = getattr(header, 'powhashhex', None)
+
+            if self.sha256 is None:
+                self.calc_sha256(self.rx_seed)
 
     def set_null(self):
         self.nVersion = 4
@@ -710,6 +719,9 @@ class CBlockHeader:
         self.nNonce = 0
         self.sha256 = None
         self.hash = None
+        self.rx_seed = None
+        self.powhash = None
+        self.powhashhex = None
 
     def deserialize(self, f):
         self.nVersion = int.from_bytes(f.read(4), "little", signed=True)
@@ -720,6 +732,9 @@ class CBlockHeader:
         self.nNonce = int.from_bytes(f.read(4), "little")
         self.sha256 = None
         self.hash = None
+        self.rx_seed = None
+        self.powhash = None
+        self.powhashhex = None
 
     def serialize(self):
         r = b""
@@ -731,27 +746,39 @@ class CBlockHeader:
         r += self.nNonce.to_bytes(4, "little")
         return r
 
-    def calc_sha256(self):
-        if self.sha256 is None:
-            r = b""
-            r += self.nVersion.to_bytes(4, "little", signed=True)
-            r += ser_uint256(self.hashPrevBlock)
-            r += ser_uint256(self.hashMerkleRoot)
-            r += self.nTime.to_bytes(4, "little")
-            r += self.nBits.to_bytes(4, "little")
-            r += self.nNonce.to_bytes(4, "little")
-            self.sha256 = uint256_from_str(hash256(r))
-            self.hash = hash256(r)[::-1].hex()
+    def calc_sha256(self, rx_seed):
+        if rx_seed:
+            self.rx_seed = rx_seed
 
-    def rehash(self):
+        if self.sha256 is None:
+            # Block identity is SHA256d of the 80-byte header (matches C++
+            # CBlockHeader::GetHash via HashWriter). RandomX is only used for
+            # the PoW check, stored separately as self.powhash.
+            header_bytes = CBlockHeader.serialize(self)
+            self.sha256 = uint256_from_str(hash256(header_bytes))
+            self.hash = ser_uint256(self.sha256)[::-1].hex()
+
+            if self.rx_seed is None:
+                # Identity is computed; PoW hash deferred until rx_seed is set.
+                self.powhash = None
+                self.powhashhex = None
+            else:
+                raw_pow = randomx_hash(self.rx_seed, header_bytes)
+                self.powhash = int.from_bytes(raw_pow, "little")
+                # Display form (big-endian visual), matches Bitcoin hash hex convention.
+                self.powhashhex = raw_pow[::-1].hex()
+
+    def rehash(self, rx_seed):
         self.sha256 = None
-        self.calc_sha256()
+        self.powhash = None
+        self.powhashhex = None
+        self.calc_sha256(rx_seed)
         return self.sha256
 
     def __repr__(self):
-        return "CBlockHeader(nVersion=%i hashPrevBlock=%064x hashMerkleRoot=%064x nTime=%s nBits=%08x nNonce=%08x)" \
+        return "CBlockHeader(nVersion=%i hashPrevBlock=%064x hashMerkleRoot=%064x nTime=%s nBits=%08x nNonce=%08x hash=%s)" \
             % (self.nVersion, self.hashPrevBlock, self.hashMerkleRoot,
-               time.ctime(self.nTime), self.nBits, self.nNonce)
+               time.ctime(self.nTime), self.nBits, self.nNonce, self.hash or "N/A")
 
 BLOCK_HEADER_SIZE = len(CBlockHeader().serialize())
 assert_equal(BLOCK_HEADER_SIZE, 80)
@@ -805,11 +832,13 @@ class CBlock(CBlockHeader):
 
         return self.get_merkle_root(hashes)
 
-    def is_valid(self):
-        self.calc_sha256()
+    def is_valid(self, rx_seed):
+        self.calc_sha256(rx_seed)
         target = uint256_from_compact(self.nBits)
-        if self.sha256 > target:
+        
+        if self.powhash > target:
             return False
+            
         for tx in self.vtx:
             if not tx.is_valid():
                 return False
@@ -817,12 +846,15 @@ class CBlock(CBlockHeader):
             return False
         return True
 
-    def solve(self):
-        self.rehash()
+    def solve(self, rx_seed):
+        self.rx_seed = rx_seed
         target = uint256_from_compact(self.nBits)
-        while self.sha256 > target:
+        
+        self.rehash(self.rx_seed)
+
+        while self.powhash > target:
             self.nNonce += 1
-            self.rehash()
+            self.rehash(self.rx_seed)
 
     # Calculate the block weight using witness and non-witness
     # serialization size (does NOT use sigops).

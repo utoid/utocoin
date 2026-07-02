@@ -343,7 +343,7 @@ TestChain100Setup::TestChain100Setup(
     TestOpts opts)
     : TestingSetup{ChainType::REGTEST, opts}
 {
-    SetMockTime(1598887952);
+    SetMockTime(Params().GenesisBlock().nTime + 1);
     constexpr std::array<unsigned char, 32> vchKey = {
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
     coinbaseKey.Set(vchKey.begin(), vchKey.end(), true);
@@ -353,7 +353,7 @@ TestChain100Setup::TestChain100Setup(
 
     {
         LOCK(::cs_main);
-        std::string expectHash = "ca96b0a5c6ed0d02e587418e42348bab96431c513e6bbd874a66c9a8e980ee4b";
+        std::string expectHash = "1d795af80ea77f23490266af02c4c120c4557e77c966d9b84d3fae2428946f4b";
         assert(m_node.chainman->ActiveChain().Tip()->GetBlockHash().ToString() == expectHash);
     }
 }

@@ -174,20 +174,19 @@ BOOST_AUTO_TEST_CASE(blockmanager_flush_block_file)
     // Two blocks in the file
     BOOST_CHECK_EQUAL(blockman.CalculateCurrentUsage(), (TEST_BLOCK_SIZE + BLOCK_SERIALIZATION_HEADER_SIZE) * 2);
 
-    // First two blocks are written as expected
-    // Errors are expected because block data is junk, thrown AFTER successful read
+    // First two blocks are written as expected.
+    // Note: in this fork the FlatFilePos-based ReadBlock overload no longer
+    // runs the proof-of-work check (that was moved to the index-based
+    // ReadBlock when scrypt was replaced with RandomX, since the seed is
+    // derived from the block's CBlockIndex). The deserialize itself succeeds
+    // because the on-disk bytes round-trip cleanly even though the headers
+    // are otherwise junk; we only verify the block contents come back right.
     CBlock read_block;
     BOOST_CHECK_EQUAL(read_block.nVersion, 0);
-    {
-        ASSERT_DEBUG_LOG("ReadBlock: Errors in block header");
-        BOOST_CHECK(!blockman.ReadBlock(read_block, pos1));
-        BOOST_CHECK_EQUAL(read_block.nVersion, 1);
-    }
-    {
-        ASSERT_DEBUG_LOG("ReadBlock: Errors in block header");
-        BOOST_CHECK(!blockman.ReadBlock(read_block, pos2));
-        BOOST_CHECK_EQUAL(read_block.nVersion, 2);
-    }
+    BOOST_CHECK(blockman.ReadBlock(read_block, pos1));
+    BOOST_CHECK_EQUAL(read_block.nVersion, 1);
+    BOOST_CHECK(blockman.ReadBlock(read_block, pos2));
+    BOOST_CHECK_EQUAL(read_block.nVersion, 2);
 
     // During reindex, the flat file block storage will not be written to.
     // UpdateBlockInfo will, however, update the blockfile metadata.

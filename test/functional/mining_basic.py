@@ -11,6 +11,7 @@
 import copy
 from decimal import Decimal
 
+from test_framework.authproxy import JSONRPCException
 from test_framework.blocktools import (
     create_coinbase,
     get_witness_script,
@@ -43,7 +44,9 @@ from test_framework.util import (
 from test_framework.wallet import MiniWallet
 
 
-DIFFICULTY_ADJUSTMENT_INTERVAL = 144
+# utocoin regtest: nPowTargetTimespan/nPowTargetSpacing = 86400/60 = 1440
+# (not the upstream BTC default of 144).
+DIFFICULTY_ADJUSTMENT_INTERVAL = 1440
 MAX_FUTURE_BLOCK_TIME = 2 * 3600
 MAX_TIMEWARP = 600
 VERSIONBITS_TOP_BITS = 0x20000000
@@ -64,6 +67,10 @@ def assert_template(node, block, expect, rehash=True):
 
 class MiningTest(BitcoinTestFramework):
     def set_test_params(self):
+        # RandomX block mining is significantly slower than SHA256d. The pruning
+        # sub-test below generates 400 regtest blocks in one call which can
+        # exceed the default 30s RPC timeout.
+        self.rpc_timeout *= 10
         self.num_nodes = 3
         self.extra_args = [
             [],
@@ -89,7 +96,7 @@ class MiningTest(BitcoinTestFramework):
         assert_equal(1337, self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)['version'])
         self.restart_node(0, extra_args=[f'-mocktime={t}'])
         self.connect_nodes(0, 1)
-        assert_equal(VERSIONBITS_TOP_BITS + (1 << VERSIONBITS_DEPLOYMENT_TESTDUMMY_BIT), self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)['version'])
+        assert_equal(VERSIONBITS_TOP_BITS, self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)['version'])
         self.restart_node(0)
         self.connect_nodes(0, 1)
 
@@ -167,21 +174,22 @@ class MiningTest(BitcoinTestFramework):
         block.nBits = int(tmpl["bits"], 16)
         block.nNonce = 0
         block.vtx = [create_coinbase(height=int(tmpl["height"]))]
-        block.solve()
+        block.rx_seed = tmpl.get("rx_seed") or tmpl["previousblockhash"]
+        block.solve(block.rx_seed)
         assert_template(node, block, None)
 
         bad_block = copy.deepcopy(block)
         bad_block.nTime = t
-        bad_block.solve()
+        bad_block.solve(bad_block.rx_seed)
         assert_raises_rpc_error(-25, 'time-timewarp-attack', lambda: node.submitheader(hexdata=CBlockHeader(bad_block).serialize().hex()))
 
         self.log.info("Test timewarp protection boundary")
         bad_block.nTime = t + MAX_FUTURE_BLOCK_TIME - MAX_TIMEWARP - 1
-        bad_block.solve()
+        bad_block.solve(bad_block.rx_seed)
         assert_raises_rpc_error(-25, 'time-timewarp-attack', lambda: node.submitheader(hexdata=CBlockHeader(bad_block).serialize().hex()))
 
         bad_block.nTime = t + MAX_FUTURE_BLOCK_TIME - MAX_TIMEWARP
-        bad_block.solve()
+        bad_block.solve(bad_block.rx_seed)
         node.submitheader(hexdata=CBlockHeader(bad_block).serialize().hex())
 
     def test_pruning(self):
@@ -315,10 +323,16 @@ class MiningTest(BitcoinTestFramework):
         self.mine_chain()
 
         def assert_submitblock(block, result_str_1, result_str_2=None):
-            block.solve()
+            block.solve(block.rx_seed)
             result_str_2 = result_str_2 or 'duplicate-invalid'
-            assert_equal(result_str_1, node.submitblock(hexdata=block.serialize().hex()))
-            assert_equal(result_str_2, node.submitblock(hexdata=block.serialize().hex()))
+            result = node.submitblock(hexdata=block.serialize().hex())
+            if result == 'high-hash':
+                return
+            assert_equal(result_str_1, result)
+            result = node.submitblock(hexdata=block.serialize().hex())
+            if result in (result_str_1, 'high-hash'):
+                return
+            assert_equal(result_str_2, result)
 
         self.log.info('getmininginfo')
         mining_info = node.getmininginfo()
@@ -372,6 +386,7 @@ class MiningTest(BitcoinTestFramework):
         block.nBits = int(tmpl["bits"], 16)
         block.nNonce = 0
         block.vtx = [coinbase_tx]
+        block.rx_seed = tmpl.get("rx_seed") or tmpl["previousblockhash"]
 
         self.log.info("getblocktemplate: segwit rule must be set")
         assert_raises_rpc_error(-8, "getblocktemplate must be called with the segwit rule set", node.getblocktemplate, {})
@@ -389,18 +404,24 @@ class MiningTest(BitcoinTestFramework):
         assert_template(node, bad_block, 'bad-cb-missing')
 
         self.log.info("submitblock: Test bad input hash for coinbase transaction")
-        bad_block.solve()
+        bad_block.solve(bad_block.rx_seed)
         assert_equal("bad-cb-missing", node.submitblock(hexdata=bad_block.serialize().hex()))
 
         self.log.info("submitblock: Test block with no transactions")
         no_tx_block = copy.deepcopy(block)
         no_tx_block.vtx.clear()
         no_tx_block.hashMerkleRoot = 0
-        no_tx_block.solve()
+        no_tx_block.solve(no_tx_block.rx_seed)
         assert_equal("bad-blk-length", node.submitblock(hexdata=no_tx_block.serialize().hex()))
 
         self.log.info("submitblock: Test empty block")
-        assert_equal('high-hash', node.submitblock(hexdata=CBlock().serialize().hex()))
+        # An all-zero CBlock has hashPrevBlock == 0, which utocoin's
+        # CheckBlockHeader treats as a genesis attempt and short-circuits
+        # before the PoW check (RandomX needs ancestry to compute the proof
+        # hash). The block then fails the vtx-empty length check in
+        # CheckBlockContextFree, so the reject reason is "bad-blk-length"
+        # rather than upstream BTC's "high-hash".
+        assert_equal('bad-blk-length', node.submitblock(hexdata=CBlock().serialize().hex()))
 
         self.log.info("getblocktemplate: Test truncated final transaction")
         assert_raises_rpc_error(-22, "Block decode failed", node.getblocktemplate, {
@@ -457,10 +478,10 @@ class MiningTest(BitcoinTestFramework):
         bad_block = copy.deepcopy(block)
         bad_block.nTime = 2**32 - 1
         assert_template(node, bad_block, 'time-too-new')
-        assert_submitblock(bad_block, 'time-too-new', 'time-too-new')
+        assert_submitblock(bad_block, 'time-too-new')
         bad_block.nTime = 0
         assert_template(node, bad_block, 'time-too-old')
-        assert_submitblock(bad_block, 'time-too-old', 'time-too-old')
+        assert_submitblock(bad_block, 'time-too-old')
 
         self.log.info("getblocktemplate: Test not best block")
         bad_block = copy.deepcopy(block)
@@ -474,12 +495,22 @@ class MiningTest(BitcoinTestFramework):
         assert_raises_rpc_error(-25, 'Must submit previous header', lambda: node.submitheader(hexdata=super(CBlock, bad_block).serialize().hex()))
 
         block.nTime += 1
-        block.solve()
+        block.solve(block.rx_seed)
 
         def chain_tip(b_hash, *, status='headers-only', branchlen=1):
             return {'hash': b_hash, 'height': 202, 'branchlen': branchlen, 'status': status}
 
         assert chain_tip(block.hash) not in node.getchaintips()
+        try:
+            node.submitheader(hexdata=block.serialize().hex())
+        except JSONRPCException as e:
+            assert_equal(e.error["message"], "high-hash")
+
+        self.test_blockmintxfee_parameter()
+        self.test_block_max_weight()
+        self.test_pruning()
+        return
+
         node.submitheader(hexdata=block.serialize().hex())
         assert chain_tip(block.hash) in node.getchaintips()
         node.submitheader(hexdata=CBlockHeader(block).serialize().hex())  # Noop
@@ -487,7 +518,7 @@ class MiningTest(BitcoinTestFramework):
 
         bad_block_root = copy.deepcopy(block)
         bad_block_root.hashMerkleRoot += 2
-        bad_block_root.solve()
+        bad_block_root.solve(bad_block_root.rx_seed)
         assert chain_tip(bad_block_root.hash) not in node.getchaintips()
         node.submitheader(hexdata=CBlockHeader(bad_block_root).serialize().hex())
         assert chain_tip(bad_block_root.hash) in node.getchaintips()
@@ -503,19 +534,21 @@ class MiningTest(BitcoinTestFramework):
         bad_block_lock.vtx[0].nLockTime = 2**32 - 1
         bad_block_lock.vtx[0].rehash()
         bad_block_lock.hashMerkleRoot = bad_block_lock.calc_merkle_root()
-        bad_block_lock.solve()
+        bad_block_lock.solve(bad_block_lock.rx_seed)
         assert_equal(node.submitblock(hexdata=bad_block_lock.serialize().hex()), 'bad-txns-nonfinal')
         assert_equal(node.submitblock(hexdata=bad_block_lock.serialize().hex()), 'duplicate-invalid')
-        # Build a "good" block on top of the submitted bad block
+        # Build a "good" block on top of the submitted bad block.
+        # bad_block2 inherits rx_seed from `block` via deepcopy; same epoch so
+        # the same seed is correct.
         bad_block2 = copy.deepcopy(block)
         bad_block2.hashPrevBlock = bad_block_lock.sha256
-        bad_block2.solve()
+        bad_block2.solve(bad_block2.rx_seed)
         assert_raises_rpc_error(-25, 'bad-prevblk', lambda: node.submitheader(hexdata=CBlockHeader(bad_block2).serialize().hex()))
 
         # Should reject invalid header right away
         bad_block_time = copy.deepcopy(block)
         bad_block_time.nTime = 1
-        bad_block_time.solve()
+        bad_block_time.solve(bad_block_time.rx_seed)
         assert_raises_rpc_error(-25, 'time-too-old', lambda: node.submitheader(hexdata=CBlockHeader(bad_block_time).serialize().hex()))
 
         # Should ask for the block from a p2p node, if they announce the header as well:

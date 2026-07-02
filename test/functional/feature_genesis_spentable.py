@@ -47,7 +47,8 @@ class GenesisSpendableTest(BitcoinTestFramework):
         node = self.nodes[0]
 
         self.log.info("Verifying genesis block information...")
-        genesis_hash = "7c689a1b2cdee9b1c2e79e08ba2414bb6e0f611c505a677917fc6b4b61aab4cd"
+        # utocoin RandomX regtest genesis (CRegTestGenesisBlockRandomX in chainparams.cpp).
+        genesis_hash = "704f2df3527ca59f901ef8bc683e08d44a59e34965450a115d90cbd46cc09928"
         privkey_hex = "6334dc1f7baa091f3ca23252bec38023ccc90cd25accda86561cb80e2c914941"
         wif_key = hex_to_wif(privkey_hex)
 

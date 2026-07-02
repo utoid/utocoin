@@ -36,19 +36,23 @@ class P2PEncrypted(BitcoinTestFramework):
         tip = int(last_block, 16)
         tipheight = node.getblockcount()
         last_block_time = node.getblock(last_block)['time']
+        rx_seed = node.getblockheader(last_block).get("rx_seed") or last_block
+
         for _ in range(number):
             # Create some blocks
-            block = create_block(tip, create_coinbase(tipheight + 1), last_block_time + 1)
-            block.solve()
+            block = create_block(tip, create_coinbase(tipheight + 1), last_block_time + 1, rx_seed=rx_seed)
+            block.solve(rx_seed)
             test_blocks.append(block)
-            tip = block.sha256
+            tip = int(block.hash, 16)
             tipheight += 1
             last_block_time += 1
         return test_blocks
 
     def create_test_block(self, txs):
-        block = create_block(self.tip, create_coinbase(self.tipheight + 1), self.last_block_time + 600, txlist=txs)
-        block.solve()
+        current_tip_hash = "%064x" % self.tip
+        rx_seed = self.nodes[0].getblockheader(current_tip_hash).get("rx_seed") or current_tip_hash
+        block = create_block(self.tip, create_coinbase(self.tipheight + 1), self.last_block_time + 600, txlist=txs, rx_seed=rx_seed)
+        block.solve(rx_seed)
         return block
 
     def run_test(self):

@@ -95,6 +95,7 @@ from test_framework.p2p import (
     msg_inv,
     msg_sendheaders,
 )
+from test_framework.randomx import regtest_randomx_seed_for_height
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -150,7 +151,7 @@ class BaseNode(P2PInterface):
         if len(message.headers):
             self.block_announced = True
             for x in message.headers:
-                x.calc_sha256()
+                x.calc_sha256(None)  # block identity = SHA256d, no rx_seed needed
                 # append because headers may be announced over multiple messages.
                 self.recent_headers_announced.append(x.sha256)
             self.last_blockhash_announced = message.headers[-1].sha256
@@ -244,8 +245,9 @@ class SendHeadersTest(BitcoinTestFramework):
         test_node.check_last_headers_announcement(headers=[tip_hash])
 
         self.log.info("Verify getheaders with null locator and invalid hashstop does not return headers.")
-        block = create_block(int(tip["hash"], 16), create_coinbase(tip["height"] + 1), tip["mediantime"] + 1)
-        block.solve()
+        rx_seed = tip.get("rx_seed") or tip["hash"]
+        block = create_block(int(tip["hash"], 16), create_coinbase(tip["height"] + 1), tip["mediantime"] + 1, rx_seed=rx_seed)
+        block.solve(rx_seed)
         test_node.send_header_for_blocks([block])
         test_node.clear_block_announcements()
         test_node.send_get_headers(locator=[], hashstop=int(block.hash, 16))
@@ -282,10 +284,12 @@ class SendHeadersTest(BitcoinTestFramework):
                 # this time announce own block via headers
                 inv_node.clear_block_announcements()
                 height = self.nodes[0].getblockcount()
-                last_time = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['time']
+                best_hash = self.nodes[0].getbestblockhash()
+                last_time = self.nodes[0].getblock(best_hash)['time']
                 block_time = last_time + 1
-                new_block = create_block(tip, create_coinbase(height + 1), block_time)
-                new_block.solve()
+                rx_seed = self.nodes[0].getblockheader(best_hash).get("rx_seed") or best_hash
+                new_block = create_block(tip, create_coinbase(height + 1), block_time, rx_seed=rx_seed)
+                new_block.solve(rx_seed)
                 test_node.send_header_for_blocks([new_block])
                 test_node.wait_for_getdata([new_block.sha256])
                 test_node.send_and_ping(msg_block(new_block))  # make sure this block is processed
@@ -321,8 +325,9 @@ class SendHeadersTest(BitcoinTestFramework):
                 self.log.debug("Part 2.{}.{}: starting...".format(i, j))
                 blocks = []
                 for _ in range(i + 1):
-                    blocks.append(create_block(tip, create_coinbase(height), block_time))
-                    blocks[-1].solve()
+                    rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0])
+                    blocks.append(create_block(tip, create_coinbase(height), block_time, rx_seed=rx_seed))
+                    blocks[-1].solve(rx_seed)
                     tip = blocks[-1].sha256
                     block_time += 1
                     height += 1
@@ -439,8 +444,9 @@ class SendHeadersTest(BitcoinTestFramework):
         # Create 2 blocks.  Send the blocks, then send the headers.
         blocks = []
         for _ in range(2):
-            blocks.append(create_block(tip, create_coinbase(height), block_time))
-            blocks[-1].solve()
+            rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0])
+            blocks.append(create_block(tip, create_coinbase(height), block_time, rx_seed=rx_seed))
+            blocks[-1].solve(rx_seed)
             tip = blocks[-1].sha256
             block_time += 1
             height += 1
@@ -457,8 +463,9 @@ class SendHeadersTest(BitcoinTestFramework):
         # This time, direct fetch should work
         blocks = []
         for _ in range(3):
-            blocks.append(create_block(tip, create_coinbase(height), block_time))
-            blocks[-1].solve()
+            rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0])
+            blocks.append(create_block(tip, create_coinbase(height), block_time, rx_seed=rx_seed))
+            blocks[-1].solve(rx_seed)
             tip = blocks[-1].sha256
             block_time += 1
             height += 1
@@ -478,8 +485,9 @@ class SendHeadersTest(BitcoinTestFramework):
 
         # Create extra blocks for later
         for _ in range(20):
-            blocks.append(create_block(tip, create_coinbase(height), block_time))
-            blocks[-1].solve()
+            rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0])
+            blocks.append(create_block(tip, create_coinbase(height), block_time, rx_seed=rx_seed))
+            blocks[-1].solve(rx_seed)
             tip = blocks[-1].sha256
             block_time += 1
             height += 1
@@ -527,8 +535,9 @@ class SendHeadersTest(BitcoinTestFramework):
             blocks = []
             # Create two more blocks.
             for _ in range(2):
-                blocks.append(create_block(tip, create_coinbase(height), block_time))
-                blocks[-1].solve()
+                rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0])
+                blocks.append(create_block(tip, create_coinbase(height), block_time, rx_seed=rx_seed))
+                blocks[-1].solve(rx_seed)
                 tip = blocks[-1].sha256
                 block_time += 1
                 height += 1
@@ -546,8 +555,9 @@ class SendHeadersTest(BitcoinTestFramework):
         # Now we test that if we repeatedly don't send connecting headers, we
         # don't go into an infinite loop trying to get them to connect.
         for _ in range(NUM_HEADERS + 1):
-            blocks.append(create_block(tip, create_coinbase(height), block_time))
-            blocks[-1].solve()
+            rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0])
+            blocks.append(create_block(tip, create_coinbase(height), block_time, rx_seed=rx_seed))
+            blocks[-1].solve(rx_seed)
             tip = blocks[-1].sha256
             block_time += 1
             height += 1

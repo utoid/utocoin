@@ -11,25 +11,28 @@ from test_framework.util import (
     assert_raises_rpc_error,
 )
 
-BECH32_VALID = 'bcrt1qtmp74ayg7p24uslctssvjm06q5phz4yrxucgnv'
-BECH32_VALID_UNKNOWN_WITNESS = 'bcrt1p424qxxyd0r'
-BECH32_VALID_CAPITALS = 'BCRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U33RAH7R'
-BECH32_VALID_MULTISIG = 'bcrt1qdg3myrgvzw7ml9q0ejxhlkyxm7vl9r56yzkfgvzclrf4hkpx9yfqhpsuks'
+# All bech32 vectors here use the utocoin regtest hrp ("ucrt"). The original
+# bcrt-based fixtures from upstream were re-encoded; the invalid ones were
+# regenerated so they still trigger the documented error paths.
+BECH32_VALID = 'ucrt1qtmp74ayg7p24uslctssvjm06q5phz4yrwm2tq4'
+BECH32_VALID_UNKNOWN_WITNESS = 'ucrt1p424q0dg0w2'
+BECH32_VALID_CAPITALS = 'UCRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U3EY05D6'
+BECH32_VALID_MULTISIG = 'ucrt1qdg3myrgvzw7ml9q0ejxhlkyxm7vl9r56yzkfgvzclrf4hkpx9yfq5ayj7d'
 
-BECH32_INVALID_BECH32 = 'bcrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqdmchcc'
-BECH32_INVALID_BECH32M = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7k35mrzd'
-BECH32_INVALID_VERSION = 'bcrt130xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqynjegk'
-BECH32_INVALID_SIZE = 'bcrt1s0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7v8n0nx0muaewav25430mtr'
-BECH32_INVALID_V0_SIZE = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kqqq5k3my'
+BECH32_INVALID_BECH32 = 'ucrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqw8ves9'
+BECH32_INVALID_BECH32M = 'ucrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kenfq35'
+BECH32_INVALID_VERSION = 'ucrt130xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vq80xhqt'
+BECH32_INVALID_SIZE = 'ucrt1pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq4n6el0'
+BECH32_INVALID_V0_SIZE = 'ucrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqquv6kx7'
 BECH32_INVALID_PREFIX = 'bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx'
-BECH32_TOO_LONG = 'bcrt1q049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23m'
-BECH32_ONE_ERROR = 'bcrt1q049edschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_ONE_ERROR_CAPITALS = 'BCRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U32RAH7R'
-BECH32_TWO_ERRORS = 'bcrt1qax9suht3qv95sw33xavx8crpxduefdrsvgsklu' # should be bcrt1qax9suht3qv95sw33wavx8crpxduefdrsvgsklx
-BECH32_NO_SEPARATOR = 'bcrtq049ldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_INVALID_CHAR = 'bcrt1q04oldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_MULTISIG_TWO_ERRORS = 'bcrt1qdg3myrgvzw7ml8q0ejxhlkyxn7vl9r56yzkfgvzclrf4hkpx9yfqhpsuks'
-BECH32_WRONG_VERSION = 'bcrt1ptmp74ayg7p24uslctssvjm06q5phz4yrxucgnv'
+BECH32_TOO_LONG = 'ucrt1q' + 'q' * 102  # > 90 chars to trigger "Bech32 string too long"
+BECH32_ONE_ERROR = 'ucrt1qw50qd6qejxtdg4y5r3zarvary0c5xw7kv0ev5k'  # corruption at pos 9
+BECH32_ONE_ERROR_CAPITALS = 'UCRT1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KQ0EV5K'  # corruption at pos 38
+BECH32_TWO_ERRORS = 'ucrt1qw508d6qejxtdg4y5q3zarvary0c5xw7kv0ev5q'  # corruptions at pos 22, 43
+BECH32_NO_SEPARATOR = 'ucrtqw508d6qejxtdg4y5r3zarvary0c5xw7kv0ev5k'
+BECH32_INVALID_CHAR = 'ucrt1qw5o8d6qejxtdg4y5r3zarvary0c5xw7kv0ev5k'  # 'o' not in bech32 charset, pos 8
+BECH32_MULTISIG_TWO_ERRORS = 'ucrt1qdg3myrgvzw7mlqq0ejxhlkyxq7vl9r56yzkfgvzclrf4hkpx9yfq5ayj7d'  # corruptions at pos 19, 30
+BECH32_WRONG_VERSION = 'ucrt1ptmp74ayg7p24uslctssvjm06q5phz4yrwm2tq4'  # BECH32_VALID with witver flipped v0->v1 at pos 5
 
 BASE58_VALID = 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn'
 BASE58_INVALID_PREFIX = '17VZNX1SN5NtKa8UQFxwQbFeFc3iqRYhem'

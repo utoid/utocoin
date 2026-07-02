@@ -56,8 +56,9 @@ class InvalidTxRequestTest(BitcoinTestFramework):
 
         self.log.info("Create a new block with an anyone-can-spend coinbase.")
         height = 1
-        block = create_block(tip, create_coinbase(height), block_time)
-        block.solve()
+        rx_seed = node.getblockheader(best_block).get("rx_seed") or best_block
+        block = create_block(tip, create_coinbase(height), block_time, rx_seed=rx_seed)
+        block.solve(rx_seed)
         # Save the coinbase for later
         block1 = block
         node.p2ps[0].send_blocks_and_test([block], node, success=True)
@@ -165,7 +166,7 @@ class InvalidTxRequestTest(BitcoinTestFramework):
             node.p2ps[0].send_txs_and_test([rejected_parent], node, success=False)
 
         self.log.info('Test that a peer disconnection causes erase its transactions from the orphan pool')
-        with node.assert_debug_log(['Erased 100 orphan transaction(s) from peer=26']):
+        with node.assert_debug_log(['Erased 100 orphan transaction(s) from peer=25']):
             self.reconnect_p2p(num_connections=1)
 
         self.log.info('Test that a transaction in the orphan pool is included in a new tip block causes erase this transaction from the orphan pool')
@@ -182,12 +183,14 @@ class InvalidTxRequestTest(BitcoinTestFramework):
         self.log.info('Send the orphan ... ')
         node.p2ps[0].send_txs_and_test([tx_orphan_include_by_block_A], node, success=False)
 
-        tip = int(node.getbestblockhash(), 16)
+        best_block_hash = node.getbestblockhash()
+        tip = int(best_block_hash, 16)
         height = node.getblockcount() + 1
-        block_A = create_block(tip, create_coinbase(height))
+        rx_seed = node.getblockheader(best_block_hash).get("rx_seed") or best_block_hash
+        block_A = create_block(tip, create_coinbase(height), rx_seed=rx_seed)
         block_A.vtx.extend([tx_withhold, tx_withhold_until_block_A, tx_orphan_include_by_block_A])
         block_A.hashMerkleRoot = block_A.calc_merkle_root()
-        block_A.solve()
+        block_A.solve(rx_seed)
 
         self.log.info('Send the block that includes the previous orphan ... ')
         with node.assert_debug_log(["Erased 1 orphan transaction(s) included or conflicted by block"]):
@@ -211,12 +214,14 @@ class InvalidTxRequestTest(BitcoinTestFramework):
         self.log.info('Send the orphan ... ')
         node.p2ps[0].send_txs_and_test([tx_orphan_conflict_by_block_B], node, success=False)
 
-        tip = int(node.getbestblockhash(), 16)
+        best_block_hash = node.getbestblockhash()
+        tip = int(best_block_hash, 16)
         height = node.getblockcount() + 1
-        block_B = create_block(tip, create_coinbase(height))
+        rx_seed = node.getblockheader(best_block_hash).get("rx_seed") or best_block_hash
+        block_B = create_block(tip, create_coinbase(height), rx_seed=rx_seed)
         block_B.vtx.extend([tx_withhold_until_block_B, tx_orphan_include_by_block_B])
         block_B.hashMerkleRoot = block_B.calc_merkle_root()
-        block_B.solve()
+        block_B.solve(rx_seed)
 
         self.log.info('Send the block that includes a transaction which conflicts with the previous orphan ... ')
         with node.assert_debug_log(["Erased 1 orphan transaction(s) included or conflicted by block"]):

@@ -3333,7 +3333,7 @@ void PeerManagerImpl::ProcessCompactBlockTxns(CNode& pfrom, Peer& peer, const Bl
         } else {
             // Block is either okay, or possibly we received
             // READ_STATUS_CHECKBLOCK_FAILED.
-            // Note that CheckBlock can only fail for one of a few reasons:
+            // Note that CheckBlockContextFree can only fail for one of a few reasons:
             // 1. bad-proof-of-work (impossible here, because we've already
             //    accepted the header)
             // 2. merkleroot doesn't match the transactions given (already
@@ -3341,7 +3341,7 @@ void PeerManagerImpl::ProcessCompactBlockTxns(CNode& pfrom, Peer& peer, const Bl
             //    impossible here)
             // 3. the block is otherwise invalid (eg invalid coinbase,
             //    block is too big, too many legacy sigops, etc).
-            // So if CheckBlock failed, #3 is the only possibility.
+            // So if CheckBlockContextFree failed, #3 is the only possibility.
             // Under BIP 152, we don't discourage the peer unless proof of work is
             // invalid (we don't require all the stateless checks to have
             // been run).  This is handled below, so just treat this as

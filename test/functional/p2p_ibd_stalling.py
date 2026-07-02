@@ -22,6 +22,7 @@ from test_framework.p2p import (
         msg_headers,
         P2PDataStore,
 )
+from test_framework.randomx import regtest_randomx_seed_for_height
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
         assert_equal,
@@ -53,15 +54,19 @@ class P2PIBDStallingTest(BitcoinTestFramework):
         NUM_BLOCKS = 1025
         NUM_PEERS = 4
         node = self.nodes[0]
-        tip = int(node.getbestblockhash(), 16)
+        best_block_hash = node.getbestblockhash()
+        tip = int(best_block_hash, 16)
         blocks = []
         height = 1
-        block_time = node.getblock(node.getbestblockhash())['time'] + 1
+        block_time = node.getblock(best_block_hash)['time'] + 1
         self.log.info("Prepare blocks without sending them to the node")
         block_dict = {}
+        # Heights 1..1025 cross the regtest randomx_lag boundary (64), so the
+        # seed must be recomputed per height.
         for _ in range(NUM_BLOCKS):
-            blocks.append(create_block(tip, create_coinbase(height), block_time))
-            blocks[-1].solve()
+            rx_seed = regtest_randomx_seed_for_height(height, node)
+            blocks.append(create_block(tip, create_coinbase(height), block_time, rx_seed=rx_seed))
+            blocks[-1].solve(rx_seed)
             tip = blocks[-1].sha256
             block_time += 1
             height += 1
@@ -83,7 +88,7 @@ class P2PIBDStallingTest(BitcoinTestFramework):
         # Need to wait until 1023 blocks are received - the magic total bytes number is a workaround in lack of an rpc
         # returning the number of downloaded (but not connected) blocks.
         bytes_recv = 172761 if not self.options.v2transport else 169692
-        self.wait_until(lambda: self.total_bytes_recv_for_blocks() == bytes_recv)
+        self.wait_until(lambda: self.total_bytes_recv_for_blocks() == bytes_recv, timeout=300)
 
         self.all_sync_send_with_ping(peers)
         # If there was a peer marked for stalling, it would get disconnected
@@ -154,7 +159,7 @@ class P2PIBDStallingTest(BitcoinTestFramework):
     def all_sync_send_with_ping(self, peers):
         for p in peers:
             if p.is_connected:
-                p.sync_with_ping()
+                p.sync_with_ping(timeout=240)
 
     def is_block_requested(self, peers, hash):
         for p in peers:

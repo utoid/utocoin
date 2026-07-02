@@ -219,7 +219,10 @@ class ZMQTest (BitcoinTestFramework):
             hex = rawblock.receive()
             block = CBlock()
             block.deserialize(BytesIO(hex))
-            assert block.is_valid()
+            block_info = self.nodes[0].getblock(genhashes[x])
+            rx_seed = block_info.get("rx_seed")
+            block.rehash(rx_seed)
+            assert block.is_valid(rx_seed)
             assert_equal(block.vtx[0].hash, tx.hash)
             assert_equal(len(block.vtx), 1)
             assert_equal(genhashes[x], hash256_reversed(hex[:80]).hex())
@@ -420,9 +423,11 @@ class ZMQTest (BitcoinTestFramework):
         bump_txid = self.nodes[0].sendrawtransaction(orig_tx['tx'].serialize().hex())
         # Mine the pre-bump tx
         txs_to_add = [orig_tx['hex']] + [tx['hex'] for tx in more_tx]
-        block = create_block(int(self.nodes[0].getbestblockhash(), 16), create_coinbase(self.nodes[0].getblockcount()+1), txlist=txs_to_add)
+        best_block_hash = self.nodes[0].getbestblockhash()
+        rx_seed = self.nodes[0].getblockheader(best_block_hash).get("rx_seed") or best_block_hash
+        block = create_block(int(best_block_hash, 16), create_coinbase(self.nodes[0].getblockcount()+1), txlist=txs_to_add, rx_seed=rx_seed)
         add_witness_commitment(block)
-        block.solve()
+        block.solve(rx_seed)
         assert_equal(self.nodes[0].submitblock(block.serialize().hex()), None)
         tip = self.nodes[0].getbestblockhash()
         assert_equal(int(tip, 16), block.sha256)

@@ -44,8 +44,11 @@ class InvalidateTest(BitcoinTestFramework):
         # affect results since this chain will be invalidated next.
         tip = self.nodes[0].getbestblockhash()
         block_time = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['time'] + 1
-        block = create_block(int(tip, 16), create_coinbase(self.nodes[0].getblockcount()), block_time, version=4)
-        block.solve()
+        best_hash = tip
+        rx_seed = self.nodes[0].getblockheader(best_hash).get("rx_seed") or best_hash
+        block = create_block(int(best_hash, 16), create_coinbase(self.nodes[0].getblockcount() + 1), block_time, rx_seed=rx_seed)
+        block.solve(rx_seed)
+
         self.nodes[0].submitheader(block.serialize().hex())
         assert_equal(self.nodes[0].getblockchaininfo()["headers"], self.nodes[0].getblockchaininfo()["blocks"] + 1)
 

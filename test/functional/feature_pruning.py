@@ -50,10 +50,12 @@ def mine_large_blocks(node, n):
     height = int(best_block["height"]) + 1
     mine_large_blocks.nTime = max(mine_large_blocks.nTime, int(best_block["time"])) + 1
     previousblockhash = int(best_block["hash"], 16)
+    best_hash = best_block["hash"]
+    rx_seed = node.getblockheader(best_hash).get("rx_seed") or best_hash
 
     for _ in range(n):
-        block = create_block(hashprev=previousblockhash, ntime=mine_large_blocks.nTime, coinbase=create_coinbase(height, script_pubkey=big_script))
-        block.solve()
+        block = create_block(hashprev=previousblockhash, ntime=mine_large_blocks.nTime, coinbase=create_coinbase(height, script_pubkey=big_script), rx_seed=rx_seed)
+        block.solve(rx_seed)
 
         # Submit to the node
         node.submitblock(block.serialize().hex())

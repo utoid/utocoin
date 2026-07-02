@@ -43,21 +43,25 @@ class DumptxoutsetTest(BitcoinTestFramework):
 
         assert expected_path.is_file()
 
-        assert_equal(out['coins_written'], 100)
+        # utocoin's regtest genesis has 3 spendable premined outputs (see
+        # CRegTestGenesisBlockRandomX in chainparams.cpp), so the UTXO set after
+        # 100 mined blocks has 100 coinbases + 3 genesis = 103 entries.
+        assert_equal(out['coins_written'], 103)
         assert_equal(out['base_height'], 100)
         assert_equal(out['path'], str(expected_path))
-        # Blockhash should be deterministic based on mocked time.
+        # Blockhash should be deterministic based on mocked time and the
+        # (custom) regtest genesis.
         assert_equal(
             out['base_hash'],
-            '09abf0e7b510f61ca6cf33bab104e9ee99b3528b371d27a2d4b39abb800fba7e')
+            '87eec16cfae8004a8618bf46e5571c3ee092d4144645e9e1b1beaa6b2f4e949e')
 
         # UTXO snapshot hash should be deterministic based on mocked time.
         assert_equal(
             sha256sum_file(str(expected_path)).hex(),
-            '31fcdd0cf542a4b1dfc13c3c05106620ce48951ef62907dd8e5e8c15a0aa993b')
+            '2beba617b4201705aa7720dfe808aca435c919af25bde8b3c03ed4d5042478a6')
 
         assert_equal(
-            out['txoutset_hash'], 'a0b7baa3bf5ccbd3279728f230d7ca0c44a76e9923fca8f32dbfd08d65ea496a')
+            out['txoutset_hash'], '2a36b879f0958f855dc860ff18db506e34f75252bf264338977315d13dd31fe7')
         assert_equal(out['nchaintx'], 101)
 
         # Specifying a path to an existing or invalid file will fail.

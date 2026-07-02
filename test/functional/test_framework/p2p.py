@@ -617,8 +617,12 @@ class P2PInterface(P2PConnection):
         self.wait_until(test_function, timeout=timeout)
 
     def wait_for_block(self, blockhash, *, timeout=60):
+        # block identity is SHA256d of the header; no RandomX seed needed.
         def test_function():
-            return self.last_message.get("block") and self.last_message["block"].block.rehash() == blockhash
+            received = self.last_message.get("block")
+            if not received:
+                return False
+            return received.block.rehash(None) == blockhash
 
         self.wait_until(test_function, timeout=timeout)
 
@@ -627,7 +631,8 @@ class P2PInterface(P2PConnection):
             last_headers = self.last_message.get('headers')
             if not last_headers:
                 return False
-            return last_headers.headers[0].rehash() == int(blockhash, 16)
+            header = last_headers.headers[0]
+            return header.rehash(None) == int(blockhash, 16)
 
         self.wait_until(test_function, timeout=timeout)
 
@@ -636,7 +641,8 @@ class P2PInterface(P2PConnection):
             last_filtered_block = self.last_message.get('merkleblock')
             if not last_filtered_block:
                 return False
-            return last_filtered_block.merkleblock.header.rehash() == int(blockhash, 16)
+            header = last_filtered_block.merkleblock.header
+            return header.rehash(None) == int(blockhash, 16)
 
         self.wait_until(test_function, timeout=timeout)
 

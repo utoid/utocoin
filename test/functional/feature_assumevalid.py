@@ -45,6 +45,7 @@ from test_framework.messages import (
     msg_headers,
 )
 from test_framework.p2p import P2PInterface
+from test_framework.randomx import regtest_randomx_seed_for_height
 from test_framework.script import (
     CScript,
     OP_TRUE,
@@ -87,20 +88,26 @@ class AssumeValidTest(BitcoinTestFramework):
 
     def run_test(self):
         # Build the blockchain
-        self.tip = int(self.nodes[0].getbestblockhash(), 16)
-        self.block_time = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['time'] + 1
+        best_hash = self.nodes[0].getbestblockhash()
+        self.tip = int(best_hash, 16)
+        self.block_time = self.nodes[0].getblock(best_hash)['time'] + 1
 
         self.blocks = []
+        # Track python-built blocks so the rx_seed helper can look up the
+        # epoch-key block when this chain crosses the 2112 boundary.
+        py_blocks_by_height = {0: best_hash}
 
         # Get a pubkey for the coinbase TXO
         _, coinbase_pubkey = generate_keypair()
 
         # Create the first block with a coinbase output to our key
         height = 1
-        block = create_block(self.tip, create_coinbase(height, coinbase_pubkey), self.block_time)
+        rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0], py_blocks_by_height)
+        block = create_block(self.tip, create_coinbase(height, coinbase_pubkey), self.block_time, rx_seed=rx_seed)
         self.blocks.append(block)
         self.block_time += 1
-        block.solve()
+        block.solve(rx_seed)
+        py_blocks_by_height[height] = block.hash
         # Save the coinbase for later
         self.block1 = block
         self.tip = block.sha256
@@ -108,9 +115,11 @@ class AssumeValidTest(BitcoinTestFramework):
 
         # Bury the block 100 deep so the coinbase output is spendable
         for _ in range(100):
-            block = create_block(self.tip, create_coinbase(height), self.block_time)
-            block.solve()
+            rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0], py_blocks_by_height)
+            block = create_block(self.tip, create_coinbase(height), self.block_time, rx_seed=rx_seed)
+            block.solve(rx_seed)
             self.blocks.append(block)
+            py_blocks_by_height[height] = block.hash
             self.tip = block.sha256
             self.block_time += 1
             height += 1
@@ -121,19 +130,23 @@ class AssumeValidTest(BitcoinTestFramework):
         tx.vout.append(CTxOut(49 * 100000000, CScript([OP_TRUE])))
         tx.calc_sha256()
 
-        block102 = create_block(self.tip, create_coinbase(height), self.block_time, txlist=[tx])
+        rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0], py_blocks_by_height)
+        block102 = create_block(self.tip, create_coinbase(height), self.block_time, txlist=[tx], rx_seed=rx_seed)
         self.block_time += 1
-        block102.solve()
+        block102.solve(rx_seed)
         self.blocks.append(block102)
+        py_blocks_by_height[height] = block102.hash
         self.tip = block102.sha256
         self.block_time += 1
         height += 1
 
         # Bury the assumed valid block 2100 deep
         for _ in range(2100):
-            block = create_block(self.tip, create_coinbase(height), self.block_time)
-            block.solve()
+            rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0], py_blocks_by_height)
+            block = create_block(self.tip, create_coinbase(height), self.block_time, rx_seed=rx_seed)
+            block.solve(rx_seed)
             self.blocks.append(block)
+            py_blocks_by_height[height] = block.hash
             self.tip = block.sha256
             self.block_time += 1
             height += 1
@@ -148,7 +161,7 @@ class AssumeValidTest(BitcoinTestFramework):
 
         # Send blocks to node0. Block 102 will be rejected.
         self.send_blocks_until_disconnected(p2p0)
-        self.wait_until(lambda: self.nodes[0].getblockcount() >= COINBASE_MATURITY + 1)
+        self.wait_until(lambda: self.nodes[0].getblockcount() >= COINBASE_MATURITY + 1, timeout=240)
         assert_equal(self.nodes[0].getblockcount(), COINBASE_MATURITY + 1)
 
         p2p1 = self.nodes[1].add_p2p_connection(BaseNode())

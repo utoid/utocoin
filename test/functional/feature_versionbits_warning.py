@@ -15,8 +15,10 @@ from test_framework.messages import msg_block
 from test_framework.p2p import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
 
-VB_PERIOD = 144           # versionbits period length for regtest
-VB_THRESHOLD = 108        # versionbits activation threshold for regtest
+# utocoin regtest: nMinerConfirmationWindow = 1440,
+# nRuleChangeActivationThreshold = 1080 (75%).
+VB_PERIOD = 1440          # versionbits period length for regtest
+VB_THRESHOLD = 1080       # versionbits activation threshold for regtest
 VB_TOP_BITS = 0x20000000
 VB_UNKNOWN_BIT = 27       # Choose a bit unassigned to any deployment
 VB_UNKNOWN_VERSION = VB_TOP_BITS | (1 << VB_UNKNOWN_BIT)
@@ -26,6 +28,10 @@ VB_PATTERN = re.compile("Unknown new rules activated.*versionbit")
 
 class VersionBitsWarningTest(BitcoinTestFramework):
     def set_test_params(self):
+        # utocoin regtest BIP9 window is 1440 (vs BTC 144); this test mines
+        # several windows of RandomX blocks, so the default 30s RPC timeout
+        # is too short for the per-generate batch calls.
+        self.rpc_timeout *= 20
         self.setup_clean_chain = True
         self.num_nodes = 1
 
@@ -38,20 +44,60 @@ class VersionBitsWarningTest(BitcoinTestFramework):
         self.setup_nodes()
 
     def send_blocks_with_version(self, peer, numblocks, version):
-        """Send numblocks blocks to peer with version set"""
-        tip = self.nodes[0].getbestblockhash()
-        height = self.nodes[0].getblockcount()
-        block_time = self.nodes[0].getblockheader(tip)["time"] + 1
+        """Submit numblocks RandomX-mined blocks with the given version.
+
+        Originally this used the supplied P2PInterface 'peer' to send blocks,
+        but utocoin's 1440-block BIP9 window means we have to submit > 1000
+        custom-version blocks per call. Under RandomX that takes long enough
+        that the test peer connection times out or trips the daemon's
+        anti-DoS Misbehaving threshold. We submit via the submitblock RPC
+        instead, which is functionally equivalent (the daemon goes through
+        the same AcceptBlock path) but does not depend on a live P2P link.
+        The 'peer' parameter is kept for API compatibility.
+
+        When the chain crosses a RandomX epoch boundary (the proof-of-work
+        key changes every randomx_epoch=2048 blocks past randomx_lag=64),
+        we recompute rx_seed locally so the test's solve() matches what the
+        daemon expects.
+        """
+        _ = peer  # unused
+        node = self.nodes[0]
+        RANDOMX_EPOCH = 2048
+        RANDOMX_LAG = 64
+
+        def key_height(block_height):
+            if block_height < RANDOMX_LAG:
+                return None  # uses RandomXGenesisKeyHash, not a block hash
+            return ((block_height - RANDOMX_LAG) // RANDOMX_EPOCH) * RANDOMX_EPOCH
+
+        def seed_for(block_height):
+            kh = key_height(block_height)
+            if kh is None:
+                # pre-lag: daemon uses a non-block-hash seed; ask it.
+                return node.getblockheader(node.getblockhash(max(0, block_height - 1))).get("rx_seed")
+            return node.getblockhash(kh)
+
+        tip = node.getbestblockhash()
+        height = node.getblockcount()
+        block_time = node.getblockheader(tip)["time"] + 1
+        current_key_height = key_height(height + 1)
+        rx_seed = seed_for(height + 1)
         tip = int(tip, 16)
 
         for _ in range(numblocks):
-            block = create_block(tip, create_coinbase(height + 1), block_time, version=version)
-            block.solve()
-            peer.send_message(msg_block(block))
+            next_height = height + 1
+            new_key_height = key_height(next_height)
+            if new_key_height != current_key_height:
+                rx_seed = seed_for(next_height)
+                current_key_height = new_key_height
+
+            block = create_block(tip, create_coinbase(next_height), block_time, version=version, rx_seed=rx_seed)
+            block.solve(rx_seed)
+            result = node.submitblock(hexdata=block.serialize().hex())
+            assert result is None, f"submitblock(height={next_height}) -> {result}"
             block_time += 1
-            height += 1
+            height = next_height
             tip = block.sha256
-        peer.sync_with_ping()
 
     def versionbits_in_alert_file(self):
         """Test that the versionbits warning has been written to the alert file."""
@@ -61,11 +107,14 @@ class VersionBitsWarningTest(BitcoinTestFramework):
 
     def run_test(self):
         node = self.nodes[0]
-        peer = node.add_p2p_connection(P2PInterface())
 
         node_deterministic_address = node.get_deterministic_priv_key().address
-        # Mine one period worth of blocks
+        # Mine one period worth of blocks first (utocoin regtest's 1440-block
+        # window means this takes some time under RandomX). We add the P2P
+        # peer afterwards so the connection doesn't time out during mining.
         self.generatetoaddress(node, VB_PERIOD, node_deterministic_address)
+
+        peer = node.add_p2p_connection(P2PInterface())
 
         self.log.info("Check that there is no warning if previous VB_BLOCKS have <VB_THRESHOLD blocks with unknown versionbits version.")
         # Build one period of blocks with < VB_THRESHOLD blocks signaling some unknown bit

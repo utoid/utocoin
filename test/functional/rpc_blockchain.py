@@ -65,11 +65,18 @@ TIME_RANGE_STEP = 600  # ten-minute steps
 TIME_RANGE_MTP = TIME_GENESIS_BLOCK + (HEIGHT - 6) * TIME_RANGE_STEP
 TIME_RANGE_TIP = TIME_GENESIS_BLOCK + (HEIGHT - 1) * TIME_RANGE_STEP
 TIME_RANGE_END = TIME_GENESIS_BLOCK + HEIGHT * TIME_RANGE_STEP
-DIFFICULTY_ADJUSTMENT_INTERVAL = 144
+# utocoin regtest sets nPowTargetTimespan=24h, nPowTargetSpacing=60s, so the
+# difficulty-adjustment interval is 1440 blocks (not the upstream BTC default
+# of 144). Tests that mod by this must use the daemon's actual value.
+DIFFICULTY_ADJUSTMENT_INTERVAL = 1440
 
 
 class BlockchainTest(BitcoinTestFramework):
     def set_test_params(self):
+        # utocoin regtest BIP9 confirmation window is 1440 (vs BTC default
+        # 144), so the deployment-info sub-test below mines several thousand
+        # RandomX-PoW blocks. Bump the default 30s RPC timeout.
+        self.rpc_timeout *= 20
         self.setup_clean_chain = True
         self.num_nodes = 1
         self.supports_cli = False
@@ -206,7 +213,11 @@ class BlockchainTest(BitcoinTestFramework):
         assert_equal(res['target'], target_str(REGTEST_TARGET))
 
     def check_signalling_deploymentinfo_result(self, gdi_result, height, blockhash, status_next):
-        assert height >= 144 and height <= 287
+        # utocoin regtest uses a 1440-block BIP9 confirmation window
+        # (period = nPowTargetTimespan/nPowTargetSpacing = 86400/60).
+        period = DIFFICULTY_ADJUSTMENT_INTERVAL
+        threshold = period * 3 // 4  # 75% of period -> matches nRuleChangeActivationThreshold
+        assert height >= period and height <= 2 * period - 1
 
         assert_equal(gdi_result, {
           "hash": blockhash,
@@ -226,15 +237,15 @@ class BlockchainTest(BitcoinTestFramework):
                     'min_activation_height': 0,
                     'status': 'started',
                     'status_next': status_next,
-                    'since': 144,
+                    'since': period,
                     'statistics': {
-                        'period': 144,
-                        'threshold': 108,
-                        'elapsed': height - 143,
-                        'count': height - 143,
+                        'period': period,
+                        'threshold': threshold,
+                        'elapsed': height - (period - 1),
+                        'count': height - (period - 1),
                         'possible': True,
                     },
-                    'signalling': '#'*(height-143),
+                    'signalling': '#' * (height - (period - 1)),
                 },
                 'active': False
             },
@@ -268,16 +279,23 @@ class BlockchainTest(BitcoinTestFramework):
             '-testactivationheight=segwit@6',
         ])
 
-        gbci207 = self.nodes[0].getblockchaininfo()
-        self.check_signalling_deploymentinfo_result(self.nodes[0].getdeploymentinfo(), gbci207["blocks"], gbci207["bestblockhash"], "started")
+        # First check at the start of the second window (block = period).
+        # Default window is 1440 (utocoin regtest) so mine up to there.
+        period = DIFFICULTY_ADJUSTMENT_INTERVAL
+        current_height = self.nodes[0].getblockchaininfo()["blocks"]
+        if current_height < period:
+            self.generate(self.wallet, period - current_height)
+        gbci_start = self.nodes[0].getblockchaininfo()
+        assert gbci_start["blocks"] >= period
+        self.check_signalling_deploymentinfo_result(self.nodes[0].getdeploymentinfo(), gbci_start["blocks"], gbci_start["bestblockhash"], "started")
 
-        # block just prior to lock in
-        self.generate(self.wallet, 287 - gbci207["blocks"])
-        gbci287 = self.nodes[0].getblockchaininfo()
-        self.check_signalling_deploymentinfo_result(self.nodes[0].getdeploymentinfo(), gbci287["blocks"], gbci287["bestblockhash"], "locked_in")
+        # block just prior to lock in (last block of the started window).
+        self.generate(self.wallet, (2 * period - 1) - gbci_start["blocks"])
+        gbci_lockin_prev = self.nodes[0].getblockchaininfo()
+        self.check_signalling_deploymentinfo_result(self.nodes[0].getdeploymentinfo(), gbci_lockin_prev["blocks"], gbci_lockin_prev["bestblockhash"], "locked_in")
 
         # calling with an explicit hash works
-        self.check_signalling_deploymentinfo_result(self.nodes[0].getdeploymentinfo(gbci207["bestblockhash"]), gbci207["blocks"], gbci207["bestblockhash"], "started")
+        self.check_signalling_deploymentinfo_result(self.nodes[0].getdeploymentinfo(gbci_start["bestblockhash"]), gbci_start["blocks"], gbci_start["bestblockhash"], "started")
 
     def _test_y2106(self):
         self.log.info("Check that block timestamps work until year 2106")
@@ -345,11 +363,11 @@ class BlockchainTest(BitcoinTestFramework):
         node = self.nodes[0]
         res = node.gettxoutsetinfo()
 
-        assert_equal(res['total_amount'], Decimal('8725.00000000'))
-        assert_equal(res['transactions'], HEIGHT)
+        assert_equal(res['total_amount'], Decimal('19825.00000000'))
+        assert_equal(res['transactions'], HEIGHT + 1)
         assert_equal(res['height'], HEIGHT)
-        assert_equal(res['txouts'], HEIGHT)
-        assert_equal(res['bogosize'], 16800),
+        assert_equal(res['txouts'], HEIGHT + 3)
+        assert_equal(res['bogosize'], 16978),
         assert_equal(res['bestblock'], node.getblockhash(HEIGHT))
         size = res['disk_size']
         assert size > 6400
@@ -362,11 +380,11 @@ class BlockchainTest(BitcoinTestFramework):
         node.invalidateblock(b1hash)
 
         res2 = node.gettxoutsetinfo()
-        assert_equal(res2['transactions'], 0)
-        assert_equal(res2['total_amount'], Decimal('0'))
+        assert_equal(res2['transactions'], 1)
+        assert_equal(res2['total_amount'], Decimal('11100.00000000'))
         assert_equal(res2['height'], 0)
-        assert_equal(res2['txouts'], 0)
-        assert_equal(res2['bogosize'], 0),
+        assert_equal(res2['txouts'], 3)
+        assert_equal(res2['bogosize'], 178),
         assert_equal(res2['bestblock'], node.getblockhash(0))
         assert_equal(len(res2['hash_serialized_3']), 64)
 
@@ -463,9 +481,10 @@ class BlockchainTest(BitcoinTestFramework):
         header_hex = node.getblockheader(blockhash=besthash, verbose=False)
         assert_is_hex_string(header_hex)
 
-        header = from_hex(CBlockHeader(), header_hex)
-        header.calc_sha256()
-        assert_equal(header.hash, besthash)
+        seed = header.get('rx_seed')
+        header_obj = from_hex(CBlockHeader(), header_hex)
+        header_obj.calc_sha256(seed)
+        assert_equal(header_obj.hash, besthash)
 
         assert 'previousblockhash' not in node.getblockheader(node.getblockhash(0))
         assert 'nextblockhash' not in node.getblockheader(node.getbestblockhash())
@@ -599,14 +618,16 @@ class BlockchainTest(BitcoinTestFramework):
         fork_hash = node.getblockhash(fork_height)
         fork_block = node.getblock(fork_hash)
 
-        def solve_and_send_block(prevhash, height, time):
-            b = create_block(prevhash, create_coinbase(height), time)
-            b.solve()
+        def solve_and_send_block(prevhash, height, time, rx_seed):
+            b = create_block(prevhash, create_coinbase(height), time, rx_seed=rx_seed)
+            b.solve(rx_seed)
             peer.send_and_ping(msg_block(b))
             return b
 
-        b1 = solve_and_send_block(int(fork_hash, 16), fork_height+1, fork_block['time'] + 1)
-        b2 = solve_and_send_block(b1.sha256, fork_height+2, b1.nTime + 1)
+        rx_seed_b1 = node.getblockheader(fork_hash).get("rx_seed") or fork_hash
+        b1 = solve_and_send_block(int(fork_hash, 16), fork_height+1, fork_block['time'] + 1, rx_seed_b1)
+        # b2 is in the same epoch as b1, reuse the seed.
+        b2 = solve_and_send_block(b1.sha256, fork_height+2, b1.nTime + 1, rx_seed_b1)
 
         node.invalidateblock(b2.hash)
 
@@ -711,16 +732,19 @@ class BlockchainTest(BitcoinTestFramework):
         self.log.info("Test getblock when only header is known")
         current_height = node.getblock(node.getbestblockhash())['height']
         block_time = node.getblock(node.getbestblockhash())['time'] + 1
-        block = create_block(int(blockhash, 16), create_coinbase(current_height + 1, nValue=100), block_time)
-        block.solve()
+        rx_seed = node.getblockheader(node.getbestblockhash()).get("rx_seed") or node.getbestblockhash()
+        block = create_block(int(blockhash, 16), create_coinbase(current_height + 1, nValue=100), block_time, rx_seed=rx_seed)
+        block.solve(rx_seed)
+
         node.submitheader(block.serialize().hex())
         assert_raises_rpc_error(-1, "Block not available (not fully downloaded)", lambda: node.getblock(block.hash))
 
         self.log.info("Test getblock when block data is available but undo data isn't")
-        # Submits a block building on the header-only block, so it can't be connected and has no undo data
+        # Submits a block building on the header-only block, so it can't be connected and has no undo data.
+        # Same epoch as `block`, so reuse rx_seed.
         tx = create_tx_with_script(block.vtx[0], 0, script_sig=bytes([OP_TRUE]), amount=50 * COIN)
-        block_noundo = create_block(block.sha256, create_coinbase(current_height + 2, nValue=100), block_time + 1, txlist=[tx])
-        block_noundo.solve()
+        block_noundo = create_block(block.sha256, create_coinbase(current_height + 2, nValue=100), block_time + 1, txlist=[tx], rx_seed=rx_seed)
+        block_noundo.solve(rx_seed)
         node.submitblock(block_noundo.serialize().hex())
 
         assert_fee_not_in_block(block_noundo.hash, 2)

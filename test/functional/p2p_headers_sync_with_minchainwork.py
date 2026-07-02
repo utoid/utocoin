@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test that we reject low difficulty headers to prevent our block tree from filling up with useless bloat"""
 
+import os
 from test_framework.test_framework import BitcoinTestFramework
 
 from test_framework.p2p import (
@@ -19,6 +20,7 @@ from test_framework.blocktools import (
     create_block,
 )
 
+from test_framework.randomx import regtest_randomx_seed_for_height
 from test_framework.util import assert_equal
 
 import time
@@ -29,7 +31,11 @@ NODE2_BLOCKS_REQUIRED = 2047
 
 class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
     def set_test_params(self):
-        self.rpc_timeout *= 4  # To avoid timeout when generating BLOCKS_TO_MINE
+        # RandomX mining is far slower than SHA256d. Generating thousands of
+        # regtest blocks plus reconnect/sync needs much larger timeouts on all
+        # the wait_until/sync helpers, not just the RPC call itself.
+        # (timeout_factor isn't available yet here; bumped at start of run_test.)
+        self.rpc_timeout *= 30
         self.setup_clean_chain = True
         self.num_nodes = 4
         # Node0 has no required chainwork; node1 requires 15 blocks on top of the genesis block; node2 requires 2047
@@ -56,7 +62,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
 
     def test_chains_sync_when_long_enough(self):
         self.log.info("Generate blocks on the node with no required chainwork, and verify nodes 1 and 2 have no new headers in their headers tree")
-        with self.nodes[1].assert_debug_log(expected_msgs=["[net] Ignoring low-work chain (height=14)"]), self.nodes[2].assert_debug_log(expected_msgs=["[net] Ignoring low-work chain (height=14)"]), self.nodes[3].assert_debug_log(expected_msgs=["Synchronizing blockheaders, height: 14"]):
+        with self.nodes[1].assert_debug_log(expected_msgs=["[net] Ignoring low-work chain (height=14)"], timeout=30), self.nodes[2].assert_debug_log(expected_msgs=["[net] Ignoring low-work chain (height=14)"], timeout=30), self.nodes[3].assert_debug_log(expected_msgs=["Synchronizing blockheaders, height: 14"], timeout=30):
             self.generate(self.nodes[0], NODE1_BLOCKS_REQUIRED-1, sync_fun=self.no_op)
 
         # Node3 should always allow headers due to noban permissions
@@ -79,19 +85,19 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
             assert len(chaintips) == 1
             assert {
                 'height': 0,
-                'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
+                'hash': "704f2df3527ca59f901ef8bc683e08d44a59e34965450a115d90cbd46cc09928",
                 'branchlen': 0,
                 'status': 'active',
             } in chaintips
 
         self.log.info("Generate more blocks to satisfy node1's minchainwork requirement, and verify node2 still has no new headers in headers tree")
-        with self.nodes[2].assert_debug_log(expected_msgs=["[net] Ignoring low-work chain (height=15)"]), self.nodes[3].assert_debug_log(expected_msgs=["Synchronizing blockheaders, height: 15"]):
+        with self.nodes[2].assert_debug_log(expected_msgs=["[net] Ignoring low-work chain (height=15)"], timeout=30), self.nodes[3].assert_debug_log(expected_msgs=["Synchronizing blockheaders, height: 15"], timeout=30):
             self.generate(self.nodes[0], NODE1_BLOCKS_REQUIRED - self.nodes[0].getblockcount(), sync_fun=self.no_op)
         self.sync_blocks(self.nodes[0:2]) # node3 will sync headers (noban permissions) but not blocks (due to minchainwork)
 
         assert {
             'height': 0,
-            'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
+            'hash': "704f2df3527ca59f901ef8bc683e08d44a59e34965450a115d90cbd46cc09928",
             'branchlen': 0,
             'status': 'active',
         } in self.nodes[2].getchaintips()
@@ -105,7 +111,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
         self.generate(self.nodes[0], NODE2_BLOCKS_REQUIRED-self.nodes[0].getblockcount(), sync_fun=self.no_op)
 
         self.log.info("Verify that node2 and node3 will sync the chain when it gets long enough")
-        self.sync_blocks()
+        self.sync_blocks(timeout=600)
 
     def test_peerinfo_includes_headers_presync_height(self):
         self.log.info("Test that getpeerinfo() includes headers presync height")
@@ -123,11 +129,16 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
             self.generate(node, 3000-current_height, sync_fun=self.no_op)
 
         # Send a group of 2000 headers, forking from genesis.
+        # Heights 1..2000 cross the regtest randomx_lag boundary (64), so the
+        # seed must be recomputed per height.
         new_blocks = []
-        hashPrevBlock = int(node.getblockhash(0), 16)
+        genesis_hash = node.getblockhash(0)
+        hashPrevBlock = int(genesis_hash, 16)
         for i in range(2000):
-            block = create_block(hashprev = hashPrevBlock, tmpl=node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS))
-            block.solve()
+            height = i + 1
+            rx_seed = regtest_randomx_seed_for_height(height, node)
+            block = create_block(hashprev = hashPrevBlock, tmpl=node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS), rx_seed=rx_seed)
+            block.solve(rx_seed)
             new_blocks.append(block)
             hashPrevBlock = block.sha256
 
@@ -161,6 +172,11 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
 
 
     def run_test(self):
+        # RandomX validation is much slower than SHA256d, so a node busy
+        # processing a 4000+ block reorg can take far longer than the default
+        # 60s wait_until timeout to respond to a reconnection. Scale it up.
+        self.options.timeout_factor = max(self.options.timeout_factor, 10)
+
         self.test_chains_sync_when_long_enough()
 
         self.test_large_reorgs_can_succeed()

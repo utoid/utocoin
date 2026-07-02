@@ -52,7 +52,7 @@ MAX_BLOCK_SIGOPS_WEIGHT = MAX_BLOCK_SIGOPS * WITNESS_SCALE_FACTOR
 MAX_STANDARD_TX_WEIGHT = 400000
 
 # Genesis block time (regtest)
-TIME_GENESIS_BLOCK = 1296688602
+TIME_GENESIS_BLOCK = 1776782829
 
 MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60
 
@@ -86,7 +86,7 @@ def nbits_str(nbits):
 def target_str(target):
     return f"{target:064x}"
 
-def create_block(hashprev=None, coinbase=None, ntime=None, *, version=None, tmpl=None, txlist=None):
+def create_block(hashprev=None, coinbase=None, ntime=None, *, version=None, tmpl=None, txlist=None, rx_seed=None):
     """Create a block (with regtest difficulty)."""
     block = CBlock()
     if tmpl is None:
@@ -98,6 +98,12 @@ def create_block(hashprev=None, coinbase=None, ntime=None, *, version=None, tmpl
         block.nBits = struct.unpack('>I', bytes.fromhex(tmpl['bits']))[0]
     else:
         block.nBits = REGTEST_N_BITS
+
+    actual_seed = rx_seed or tmpl.get('rx_seed')
+    if actual_seed is None:
+        raise ValueError("create_block requires rx_seed (or tmpl['rx_seed']) for RandomX PoW")
+    block.rx_seed = actual_seed
+
     if coinbase is None:
         coinbase = create_coinbase(height=tmpl['height'])
     block.vtx.append(coinbase)
@@ -107,7 +113,7 @@ def create_block(hashprev=None, coinbase=None, ntime=None, *, version=None, tmpl
                 tx = tx_from_hex(tx)
             block.vtx.append(tx)
     block.hashMerkleRoot = block.calc_merkle_root()
-    block.calc_sha256()
+    block.calc_sha256(actual_seed)
     return block
 
 def get_witness_script(witness_root, witness_nonce):
@@ -132,7 +138,7 @@ def add_witness_commitment(block, nonce=0):
     block.vtx[0].vout.append(CTxOut(0, get_witness_script(witness_root, witness_nonce)))
     block.vtx[0].rehash()
     block.hashMerkleRoot = block.calc_merkle_root()
-    block.rehash()
+    block.rehash(block.rx_seed)
 
 
 def script_BIP34_coinbase_height(height):

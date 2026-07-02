@@ -19,7 +19,7 @@ class P2PStoreBlock(P2PInterface):
         self.blocks = defaultdict(int)
 
     def on_block(self, message):
-        message.block.calc_sha256()
+        message.block.calc_sha256(None)
         self.blocks[message.block.sha256] += 1
 
 

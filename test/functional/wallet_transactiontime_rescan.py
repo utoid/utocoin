@@ -5,6 +5,7 @@
 """Test transaction time during old block rescanning
 """
 
+import os
 import concurrent.futures
 import time
 
@@ -32,6 +33,7 @@ class TransactionTimeRescanTest(BitcoinTestFramework):
                            ["-keypool=400"],
                            []
                           ]
+        self.rpc_timeout = 240
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -201,8 +203,9 @@ class TransactionTimeRescanTest(BitcoinTestFramework):
             encrypted_wallet.walletpassphrase("passphrase", 99999)
             encrypted_wallet.sethdseed(seed=hd_seed)
 
+            genesis_block_hash = "704f2df3527ca59f901ef8bc683e08d44a59e34965450a115d90cbd46cc09928"
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as thread:
-                with minernode.assert_debug_log(expected_msgs=["Rescan started from block 0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206... (slow variant inspecting all blocks)"], timeout=5):
+                with minernode.assert_debug_log(expected_msgs=[f"Rescan started from block {genesis_block_hash}... (slow variant inspecting all blocks)"], timeout=5):
                     rescanning = thread.submit(encrypted_wallet.rescanblockchain)
 
                 # set the passphrase timeout to 1 to test that the wallet remains unlocked during the rescan

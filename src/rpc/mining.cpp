@@ -655,6 +655,7 @@ static RPCHelpMan getblocktemplate()
                 }},
                 {RPCResult::Type::NUM, "vbrequired", "bit mask of versionbits the server requires set in submissions"},
                 {RPCResult::Type::STR, "previousblockhash", "The hash of current highest block"},
+                {RPCResult::Type::STR_HEX, "rx_seed", "The RandomX seed key for mining the next block"},
                 {RPCResult::Type::ARR, "transactions", "contents of non-coinbase transactions that should be included in the next block",
                 {
                     {RPCResult::Type::OBJ, "", "",
@@ -976,6 +977,8 @@ static RPCHelpMan getblocktemplate()
     result.pushKV("vbrequired", int(0));
 
     result.pushKV("previousblockhash", block.hashPrevBlock.GetHex());
+    // RandomX seed for the block being templated (height = pindexPrev->nHeight + 1).
+    result.pushKV("rx_seed", GetRandomXKey(pindexPrev, pindexPrev->nHeight + 1, consensusParams).GetHex());
     result.pushKV("transactions", std::move(transactions));
     result.pushKV("coinbaseaux", std::move(aux));
     result.pushKV("coinbasevalue", (int64_t)block.vtx[0]->vout[0].nValue);

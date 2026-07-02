@@ -36,7 +36,10 @@ class P2PCompactBlocksBlocksOnly(BitcoinTestFramework):
         blockhash = self.generate(self.nodes[2], 1, sync_fun=self.no_op)[0]
         block_hex = self.nodes[2].getblock(blockhash=blockhash, verbosity=0)
         block = from_hex(CBlock(), block_hex)
-        block.rehash()
+        
+        block_info = self.nodes[2].getblock(blockhash=blockhash, verbosity=1)
+        rx_seed = block_info.get("rx_seed")
+        block.rehash(rx_seed)
         return block
 
     def run_test(self):
@@ -113,7 +116,7 @@ class P2PCompactBlocksBlocksOnly(BitcoinTestFramework):
         def test_for_cmpctblock(block):
             if 'cmpctblock' not in p2p_conn_blocksonly.last_message:
                 return False
-            return p2p_conn_blocksonly.last_message['cmpctblock'].header_and_shortids.header.rehash() == block.sha256
+            return p2p_conn_blocksonly.last_message['cmpctblock'].header_and_shortids.header.rehash(block.rx_seed) == block.sha256
 
         p2p_conn_blocksonly.send_message(msg_getdata([CInv(MSG_CMPCT_BLOCK, block0.sha256)]))
         p2p_conn_blocksonly.wait_until(lambda: test_for_cmpctblock(block0))

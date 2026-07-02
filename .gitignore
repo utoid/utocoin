@@ -32,3 +32,4 @@ CMakeFiles/
 qa-assets/
 nohup.out
 .DS_Store
+.claude/

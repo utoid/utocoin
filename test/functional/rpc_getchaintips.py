@@ -65,16 +65,19 @@ class GetChainTipsTest (BitcoinTestFramework):
         self.log.info("Test getchaintips behavior with invalid blocks")
         self.disconnect_nodes(0, 1)
         n0 = self.nodes[0]
-        tip = int(n0.getbestblockhash(), 16)
+        best_hash = n0.getbestblockhash()
+        tip = int(best_hash, 16)
         start_height = self.nodes[0].getblockcount()
         # Create invalid block (too high coinbase)
-        block_time = n0.getblock(n0.getbestblockhash())['time'] + 1
-        invalid_block = create_block(tip, create_coinbase(start_height+1, nValue=100), block_time)
-        invalid_block.solve()
+        block_time = n0.getblock(best_hash)['time'] + 1
+        rx_seed = n0.getblockheader(best_hash).get("rx_seed") or best_hash
+        invalid_block = create_block(tip, create_coinbase(start_height+1, nValue=100), block_time, rx_seed=rx_seed)
+        invalid_block.solve(rx_seed)
 
         block_time += 1
-        block2 = create_block(invalid_block.sha256, create_coinbase(2), block_time, version=4)
-        block2.solve()
+        # block2 builds on invalid_block in the same epoch, reuse rx_seed.
+        block2 = create_block(invalid_block.sha256, create_coinbase(2), block_time, version=4, rx_seed=rx_seed)
+        block2.solve(rx_seed)
 
         self.log.info("Submit headers-only chain")
         n0.submitheader(invalid_block.serialize().hex())

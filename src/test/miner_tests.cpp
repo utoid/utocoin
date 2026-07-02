@@ -73,29 +73,6 @@ BOOST_FIXTURE_TEST_SUITE(miner_tests, MinerTestingSetup)
 
 static CFeeRate blockMinFeeRate = CFeeRate(DEFAULT_BLOCK_MIN_TX_FEE);
 
-constexpr static struct {
-    unsigned char extranonce;
-    unsigned int nonce;
-} BLOCKINFO[]{
-    {8, 3042268826}, {0, 2147498718}, {2, 536872544}, {6, 1073743951}, {7, 3758100621}, {8, 3579142486},
-    {8, 1431659630}, {2, 357920930}, {4, 1789621133}, {1, 1431661028}, {8, 3758096626}, {4, 3042280851},
-    {3, 357917918}, {8, 1789573051}, {6, 1789570210}, {5, 3579157296}, {5, 1610612965}, {4, 715830958},
-    {0, 1431706321}, {5, 2326452046}, {3, 894809670}, {2, 1968540337}, {2, 1431661470}, {7, 3937095441},
-    {2, 1431685813}, {0, 2505409053}, {1, 1610621640}, {6, 3042281068}, {7, 4116012517}, {4, 1789577248},
-    {7, 1789592747}, {6, 2505400074}, {3, 3579162545}, {2, 357917542}, {3, 3400192885}, {8, 4116019708},
-    {5, 3579150670}, {3, 8386}, {0, 1073755315}, {3, 1431663021}, {0, 3579142681}, {2, 4116010638},
-    {3, 2684361377}, {2, 3937110304}, {8, 1610615410}, {2, 2147505430}, {4, 1431660039}, {8, 715838128},
-    {7, 3937062954}, {3, 1789583984}, {8, 2505397580}, {4, 1431659757}, {1, 536906188}, {6, 1968541984},
-    {5, 1610635041}, {3, 178988306}, {3, 1789596609}, {0, 1252705886}, {8, 2505411475}, {5, 2684364638},
-    {0, 3758097618}, {6, 2505409524}, {6, 3400189473}, {6, 1789572580}, {6, 3042300271}, {5, 2684374010},
-    {0, 894790834}, {6, 3579153071}, {4, 3042273613}, {8, 2505415026}, {6, 2326446670}, {6, 1610616138},
-    {6, 1073753038}, {5, 3042270517}, {8, 3579146433}, {7, 4116036378}, {3, 3042277289}, {5, 1073761408},
-    {2, 2147488048}, {2, 3758134631}, {6, 357933315}, {7, 1789586982}, {4, 3400247303}, {3, 23833},
-    {4, 1789586619}, {0, 2684382321}, {6, 1968536132}, {3, 1073778981}, {5, 894797262}, {8, 3400186127},
-    {4, 2326448994}, {8, 357924037}, {6, 1610637992}, {0, 1252717406}, {7, 536877945}, {7, 1252743214},
-    {2, 10049}, {6, 3937074117}, {7, 31899}, {7, 6227}, {4, 3758109595}, {1, 3400202293},
-    {0, 2505436688}, {6, 3937074281}, {6, 3042272647}, {5, 3579209226}, {6, 2505483288}, {7, 894792912},
-    {8, 1252709383}, {0, 357921392}};
 static std::unique_ptr<CBlockIndex> CreateBlockIndex(int nHeight, CBlockIndex* active_chain_tip) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 {
     auto index{std::make_unique<CBlockIndex>()};
@@ -679,56 +656,46 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     options.coinbase_output_script = scriptPubKey;
     std::unique_ptr<BlockTemplate> block_template;
 
-    // We can't make transactions until we have inputs
-    // Therefore, load 110 blocks :)
-    static_assert(std::size(BLOCKINFO) == 110, "Should have 110 blocks to import");
-    int baseheight = 0;
+    // We can't make transactions until we have mature inputs. Build a lightweight
+    // 110-block regtest chain and add the first coinbase outputs to the coins view.
+    constexpr int NUM_TEST_BLOCKS{110};
+    int baseheight = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Height());
     std::vector<CTransactionRef> txFirst;
+    std::vector<CBlockIndex*> test_blocks;
+    test_blocks.reserve(NUM_TEST_BLOCKS);
 
-    for (const auto& bi : BLOCKINFO) {
-        const int current_height{mining->getTip()->height};
-        LogPrintf("current_height: %u\n", current_height);
+    {
+        LOCK(cs_main);
+        const auto& consensus{m_node.chainman->GetConsensus()};
+        CChain& active_chain{m_node.chainman->ActiveChain()};
+        CBlockIndex* tip{active_chain.Tip()};
 
-        // Simple block creation, nothing special yet:
-        block_template = mining->createNewBlock(options);
-        BOOST_REQUIRE(block_template);
+        for (int i = 0; i < NUM_TEST_BLOCKS; ++i) {
+            const int height{tip->nHeight + 1};
+            CMutableTransaction coinbase;
+            coinbase.version = 1;
+            coinbase.vin.resize(1);
+            coinbase.vin[0].scriptSig = CScript{} << height << OP_0;
+            coinbase.vout.emplace_back(GetBlockSubsidy(height, consensus), CScript{});
+            auto coinbase_ref{MakeTransactionRef(std::move(coinbase))};
+            if (txFirst.size() < 4) {
+                txFirst.push_back(coinbase_ref);
+                AddCoins(m_node.chainman->ActiveChainstate().CoinsTip(), *coinbase_ref, height);
+            }
 
-        CBlock block{block_template->getBlock()};
-        CMutableTransaction txCoinbase(*block.vtx[0]);
-        {
-            LOCK(cs_main);
-            block.nVersion = VERSIONBITS_TOP_BITS;
-            block.nTime = Assert(m_node.chainman)->ActiveChain().Tip()->GetMedianTimePast()+1;
-            txCoinbase.version = 1;
-            txCoinbase.vin[0].scriptSig = CScript{} << (current_height + 1) << bi.extranonce;
-            txCoinbase.vout.resize(1); // Ignore the (optional) segwit commitment added by CreateNewBlock (as the hardcoded nonces don't account for this)
-            txCoinbase.vout[0].scriptPubKey = CScript();
-            block.vtx[0] = MakeTransactionRef(txCoinbase);
-            if (txFirst.size() == 0)
-                baseheight = current_height;
-            if (txFirst.size() < 4)
-                txFirst.push_back(block.vtx[0]);
-            block.hashMerkleRoot = BlockMerkleRoot(block);
-            block.nNonce = bi.nonce;
+            auto* next = new CBlockIndex{};
+            next->phashBlock = new uint256{m_rng.rand256()};
+            next->pprev = tip;
+            next->nHeight = height;
+            next->nBits = UintToArith256(consensus.powLimit).GetCompact();
+            next->nTime = tip->nTime + consensus.nPowTargetSpacing;
+            next->nChainWork = tip->nChainWork + GetBlockProof(*next);
+            next->BuildSkip();
+            active_chain.SetTip(*next);
+            m_node.chainman->ActiveChainstate().CoinsTip().SetBestBlock(next->GetBlockHash());
+            test_blocks.push_back(next);
+            tip = next;
         }
-        std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(block);
-        // Alternate calls between Chainman's ProcessNewBlock and submitSolution
-        // via the Mining interface. The former is used by net_processing as well
-        // as the submitblock RPC.
-        if (current_height % 2 == 0) {
-            BOOST_REQUIRE(Assert(m_node.chainman)->ProcessNewBlock(shared_pblock, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));
-        } else {
-            BOOST_REQUIRE(block_template->submitSolution(block.nVersion, block.nTime, block.nNonce, MakeTransactionRef(txCoinbase)));
-        }
-        {
-            LOCK(cs_main);
-            // The above calls don't guarantee the tip is actually updated, so
-            // we explicitly check this.
-            auto maybe_new_tip{Assert(m_node.chainman)->ActiveChain().Tip()};
-            BOOST_REQUIRE_EQUAL(maybe_new_tip->GetBlockHash(), block.GetHash());
-        }
-        // This just adds coverage
-        mining->waitTipChanged(block.hashPrevBlock);
     }
 
     LOCK(cs_main);
@@ -744,6 +711,14 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     SetMockTime(0);
 
     TestPrioritisedMining(scriptPubKey, txFirst);
+
+    CChain& active_chain{m_node.chainman->ActiveChain()};
+    active_chain.SetTip(*Assert(test_blocks.front()->pprev));
+    m_node.chainman->ActiveChainstate().CoinsTip().SetBestBlock(active_chain.Tip()->GetBlockHash());
+    for (auto it = test_blocks.rbegin(); it != test_blocks.rend(); ++it) {
+        delete (*it)->phashBlock;
+        delete *it;
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

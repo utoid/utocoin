@@ -85,8 +85,9 @@ class BIP66Test(BitcoinTestFramework):
 
         tip = self.nodes[0].getbestblockhash()
         block_time = self.nodes[0].getblockheader(tip)['mediantime'] + 1
-        block = create_block(int(tip, 16), create_coinbase(DERSIG_HEIGHT - 1), block_time, txlist=[spendtx])
-        block.solve()
+        rx_seed = self.nodes[0].getblockheader(tip).get("rx_seed") or tip
+        block = create_block(int(tip, 16), create_coinbase(DERSIG_HEIGHT - 1), block_time, txlist=[spendtx], rx_seed=rx_seed)
+        block.solve(rx_seed)
 
         assert_equal(self.nodes[0].getblockcount(), DERSIG_HEIGHT - 2)
         self.test_dersig_info(is_active=False)  # Not active as of current tip and next block does not need to obey rules
@@ -98,8 +99,8 @@ class BIP66Test(BitcoinTestFramework):
         self.log.info("Test that blocks must now be at least version 3")
         tip = block.sha256
         block_time += 1
-        block = create_block(tip, create_coinbase(DERSIG_HEIGHT), block_time, version=2)
-        block.solve()
+        block = create_block(tip, create_coinbase(DERSIG_HEIGHT), block_time, version=2, rx_seed=rx_seed)
+        block.solve(rx_seed)
 
         with self.nodes[0].assert_debug_log(expected_msgs=[f'{block.hash}, bad-version(0x00000002)']):
             peer.send_and_ping(msg_block(block))
@@ -133,7 +134,7 @@ class BIP66Test(BitcoinTestFramework):
         # Now we verify that a block with this transaction is also invalid.
         block.vtx.append(spendtx)
         block.hashMerkleRoot = block.calc_merkle_root()
-        block.solve()
+        block.solve(rx_seed)
 
         with self.nodes[0].assert_debug_log(expected_msgs=['Block validation error: mandatory-script-verify-flag-failed (Non-canonical DER signature)']):
             peer.send_and_ping(msg_block(block))
@@ -143,7 +144,7 @@ class BIP66Test(BitcoinTestFramework):
         self.log.info("Test that a block with a DERSIG-compliant transaction is accepted")
         block.vtx[1] = self.create_tx(self.coinbase_txids[1])
         block.hashMerkleRoot = block.calc_merkle_root()
-        block.solve()
+        block.solve(rx_seed)
 
         self.test_dersig_info(is_active=True)  # Not active as of current tip, but next block must obey rules
         peer.send_and_ping(msg_block(block))

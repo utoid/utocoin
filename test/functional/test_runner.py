@@ -139,7 +139,28 @@ BASE_SCRIPTS = [
     'wallet_groups.py --legacy-wallet',
     'wallet_groups.py --descriptors',
     'p2p_blockfilters.py',
-    'feature_assumevalid.py',
+    # TODO(utocoin): feature_assumevalid's script-skip path (in validation.cpp,
+    # the "fScriptChecks = (equivalent_time <= 2 weeks)" gate) requires the
+    # assumed-valid block to be buried by more than two-weeks-equivalent of
+    # chainwork ahead of the daemon's best_header. The equivalent_time
+    # calculation divides by GetBlockProof(tip) and multiplies by
+    # consensus.nPowTargetSpacing, so the required block-burial depth is
+    # (2*7*24*60*60) / nPowTargetSpacing = 1209600 / spacing. For upstream
+    # BTC regtest (spacing=600s) that's the ~2016 blocks the test currently
+    # mines. For utocoin regtest (spacing=60s) it's ~20160 blocks. Building
+    # 20000+ RandomX-mined Python blocks via the test framework's
+    # block.solve() in light-mode librandomx is prohibitively slow (well over
+    # 50min just to construct the chain in Python), so the test can't be
+    # made to pass with only a Python-side block-count tweak. A real fix
+    # needs either:
+    #   (a) a regtest-only daemon override that scales the 2-week threshold
+    #       in validation.cpp by nPowTargetSpacing relative to BTC's 600s,
+    #       so 2200 blocks of utocoin regtest gives "two weeks of equivalent
+    #       work" the same way it does for BTC; or
+    #   (b) a much faster Python RandomX miner (FULL_MEM dataset binding) so
+    #       constructing 20k+ blocks is feasible.
+    # Disabled until one of those lands.
+    # 'feature_assumevalid.py',
     'wallet_taproot.py --descriptors',
     'feature_bip68_sequence.py',
     'rpc_packages.py',
@@ -318,7 +339,19 @@ BASE_SCRIPTS = [
     'wallet_upgradewallet.py --legacy-wallet',
     'wallet_crosschain.py',
     'mining_basic.py',
-    'mining_mainnet.py',
+    # TODO(utocoin): mining_mainnet.py replays 2015 pre-computed SHA256d nonces
+    # from data/mainnet_alt.json to drive a mainnet difficulty retarget. Two
+    # blockers under utocoin:
+    #   1. The nonces don't satisfy RandomX PoW; we'd need to remine ~1439
+    #      utocoin-mainnet blocks (utocoin's retarget interval = 1440, not
+    #      BTC's 2016) and write a new mainnet_alt.json. At utocoin mainnet's
+    #      target (powLimit 0x0000307f...; ~345k expected RandomX hashes per
+    #      block) that's many hours of one-time mining via the daemon.
+    #   2. The test asserts BTC's DIFF_1_N_BITS=0x1d00ffff and difficulty=1;
+    #      utocoin mainnet's powLimit gives initial nBits=0x1e307fff and a
+    #      legacy-reference difficulty of ~8.054e-05 -> the assertions need
+    #      to be rewritten alongside the new data file.
+    # 'mining_mainnet.py',
     'feature_signet.py',
     'p2p_mutated_blocks.py',
     'wallet_implicitsegwit.py --legacy-wallet',
@@ -353,6 +386,8 @@ BASE_SCRIPTS = [
     'wallet_sendall.py --descriptors',
     'wallet_sendmany.py --descriptors',
     'wallet_sendmany.py --legacy-wallet',
+    'wallet_sendmanyex.py --descriptors',
+    'wallet_sendmanyex.py --legacy-wallet',
     'wallet_create_tx.py --descriptors',
     'wallet_inactive_hdchains.py --legacy-wallet',
     'wallet_spend_unconfirmed.py',
@@ -414,6 +449,8 @@ BASE_SCRIPTS = [
     'wallet_migration.py',
     'p2p_ibd_txrelay.py',
     'p2p_seednode.py',
+
+    'feature_genesis_spentable.py',
     # Don't append tests at the end to avoid merge conflicts
     # Put them in a random line within the section that fits their approximate run-time
 ]
@@ -452,6 +489,8 @@ def main():
     parser.add_argument("--nocleanup", dest="nocleanup", default=False, action="store_true",
                         help="Leave bitcoinds and test.* datadir on exit or error")
     parser.add_argument('--resultsfile', '-r', help='store test results (as CSV) to the provided file')
+    parser.add_argument('--skipn', type=int, help='skip n test files')
+    parser.add_argument('--startcase', help='start from this test case')
 
     args, unknown_args = parser.parse_known_args()
     fail_on_warn = args.ci
@@ -555,6 +594,17 @@ def main():
     if args.filter:
         test_list = list(filter(re.compile(args.filter).search, test_list))
 
+    if args.skipn:
+        test_list = test_list[args.skipn:]
+
+    if args.startcase:
+        try:
+            index = test_list.index(args.startcase)
+            test_list = test_list[index:]
+        except ValueError:
+            print(f"Could not find startcase `{args.startcase}`")
+            sys.exit(1)
+
     if not test_list:
         print("No valid test scripts specified. Check that your test is in one "
               "of the test lists in test_runner.py, or run test_runner.py with no arguments to run all tests")
@@ -603,6 +653,18 @@ def run_tests(*, test_list, build_dir, tmpdir, jobs=1, enable_coverage=False, ar
     except OSError:
         # pgrep not supported
         pass
+
+    utocoin_cli = "%s/bin/utocoin-cli" % build_dir
+    result = subprocess.run(
+        [utocoin_cli, "-chain=regtest", "-powhash"],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+
+    # if result.stdout.strip() == "scrypt" or result.stderr.strip() == "scrypt":
+    #     print("%sINFO!%s Now use scrypt as pow hash" % (BOLD[1], BOLD[0]))
+    #     os.environ["USE_SCRYPT"] = "1"
 
     # Warn if there is a cache directory
     cache_dir = "%s/test/cache" % build_dir

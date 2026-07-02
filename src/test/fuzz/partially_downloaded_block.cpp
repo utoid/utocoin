@@ -34,7 +34,7 @@ void initialize_pdb()
 
 PartiallyDownloadedBlock::CheckBlockFn FuzzedCheckBlock(std::optional<BlockValidationResult> result)
 {
-    return [result](const CBlock&, BlockValidationState& state, const Consensus::Params&, bool, bool) {
+    return [result](const CBlock&, BlockValidationState& state, const Consensus::Params&, bool) {
         if (result) {
             return state.Invalid(*result);
         }
@@ -111,7 +111,7 @@ FUZZ_TARGET(partially_downloaded_block, .init = initialize_pdb)
         skipped_missing |= (!pdb.IsTxAvailable(i) && skip);
     }
 
-    // Mock CheckBlock
+    // Mock CheckBlockContextFree
     bool fail_check_block{fuzzed_data_provider.ConsumeBool()};
     auto validation_result =
         fuzzed_data_provider.PickValueInArray(

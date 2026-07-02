@@ -3,7 +3,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import assert_raises_rpc_error
 
 class WalletCrossChain(BitcoinTestFramework):
@@ -16,6 +16,12 @@ class WalletCrossChain(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
+        # This test inherently needs nodes on testnet3 + testnet4 to verify
+        # cross-chain wallet protection. utocoin's testnet3 / testnet4
+        # genesis blocks were not re-mined under RandomX (they fail
+        # LoadGenesisBlock with "proof of work failed"), and those networks
+        # are currently unmaintained. Skip until they are revived.
+        raise SkipTest("utocoin testnet3 / testnet4 unmaintained; cannot start cross-chain nodes")
 
     def setup_network(self):
         self.add_nodes(self.num_nodes)

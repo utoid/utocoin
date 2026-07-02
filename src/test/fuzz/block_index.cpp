@@ -123,13 +123,10 @@ FUZZ_TARGET(block_index, .init = init_block_index)
     block_index.ReadFlag(flag_name, flag_value);
     assert(!flag_value);
 
-    // We should be able to load everything we've previously stored. Note to assert on the
-    // return value we need to make sure all blocks pass the pow check.
+    // We should be able to load everything we've previously stored.
     const auto params{Params().GetConsensus()};
     const auto inserter = [&](const uint256&) {
         return blocks.back().get();
     };
-    WITH_LOCK(::cs_main, assert(block_index.LoadBlockIndexGuts(params, inserter, g_setup->m_interrupt, [](const CBlockIndex *pindex)->uint256{
-        return pindex->GetBlockHash();
-    })));
+    WITH_LOCK(::cs_main, assert(block_index.LoadBlockIndexGuts(params, inserter, g_setup->m_interrupt)));
 }

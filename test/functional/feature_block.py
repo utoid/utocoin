@@ -27,6 +27,7 @@ from test_framework.messages import (
     uint256_from_str,
 )
 from test_framework.p2p import P2PDataStore
+from test_framework.randomx import regtest_randomx_seed_for_height
 from test_framework.script import (
     CScript,
     MAX_SCRIPT_ELEMENT_SIZE,
@@ -150,7 +151,8 @@ class FullBlockTest(BitcoinTestFramework):
 
         # Submit blocks for rejection, each of which contains a single transaction
         # (aside from coinbase) which should be considered invalid.
-        for TxTemplate in invalid_txs.iter_all_templates():
+        for idx, TxTemplate in enumerate(invalid_txs.iter_all_templates()):
+        # for TxTemplate in invalid_txs.iter_all_templates():
             template = TxTemplate(spend_tx=attempt_spend_tx)
 
             if template.valid_in_block:
@@ -164,6 +166,7 @@ class FullBlockTest(BitcoinTestFramework):
                 self.sign_tx(badtx, attempt_spend_tx)
             badtx.rehash()
             badblock = self.update_block(blockname, [badtx])
+            self.log.info(f"Now test {idx}, reject_reason {template.block_reject_reason or template.reject_reason}")
             self.send_blocks(
                 [badblock], success=False,
                 reject_reason=(template.block_reject_reason or template.reject_reason),
@@ -596,7 +599,8 @@ class FullBlockTest(BitcoinTestFramework):
         tx = self.create_and_sign_transaction(out[14], 1)
         b44.vtx.append(tx)
         b44.hashMerkleRoot = b44.calc_merkle_root()
-        b44.solve()
+        b44.rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0])
+        b44.solve(b44.rx_seed)
         self.tip = b44
         self.block_heights[b44.sha256] = height
         self.blocks[44] = b44
@@ -610,7 +614,8 @@ class FullBlockTest(BitcoinTestFramework):
         b45.nBits = REGTEST_N_BITS
         b45.vtx.append(non_coinbase)
         b45.hashMerkleRoot = b45.calc_merkle_root()
-        b45.solve()
+        b45.rx_seed = regtest_randomx_seed_for_height(self.block_heights[self.tip.sha256] + 1, self.nodes[0])
+        b45.solve(b45.rx_seed)
         self.block_heights[b45.sha256] = self.block_heights[self.tip.sha256] + 1
         self.tip = b45
         self.blocks[45] = b45
@@ -624,7 +629,8 @@ class FullBlockTest(BitcoinTestFramework):
         b46.nBits = REGTEST_N_BITS
         b46.vtx = []
         b46.hashMerkleRoot = 0
-        b46.solve()
+        b46.rx_seed = regtest_randomx_seed_for_height(self.block_heights[b44.sha256] + 1, self.nodes[0])
+        b46.solve(b46.rx_seed)
         self.block_heights[b46.sha256] = self.block_heights[b44.sha256] + 1
         self.tip = b46
         assert 46 not in self.blocks
@@ -634,11 +640,12 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block with invalid work")
         self.move_tip(44)
         b47 = self.next_block(47)
+        b47.rx_seed = regtest_randomx_seed_for_height(self.block_heights[b44.sha256] + 1, self.nodes[0])
         target = uint256_from_compact(b47.nBits)
-        while b47.sha256 <= target:
+        while b47.powhash <= target:
             # Rehash nonces until an invalid too-high-hash block is found.
             b47.nNonce += 1
-            b47.rehash()
+            b47.rehash(b47.rx_seed)
         self.send_blocks([b47], False, force_send=True, reject_reason='high-hash', reconnect=True)
 
         self.log.info("Reject a block with a timestamp >2 hours in the future")
@@ -646,21 +653,24 @@ class FullBlockTest(BitcoinTestFramework):
         b48 = self.next_block(48)
         b48.nTime = int(time.time()) + 60 * 60 * 3
         # Header timestamp has changed. Re-solve the block.
-        b48.solve()
+        b48.rx_seed = regtest_randomx_seed_for_height(self.block_heights[b44.sha256] + 1, self.nodes[0])
+        b48.solve(b48.rx_seed)
         self.send_blocks([b48], False, force_send=True, reject_reason='time-too-new')
 
         self.log.info("Reject a block with invalid merkle hash")
         self.move_tip(44)
         b49 = self.next_block(49)
         b49.hashMerkleRoot += 1
-        b49.solve()
+        b49.rx_seed = regtest_randomx_seed_for_height(self.block_heights[b44.sha256] + 1, self.nodes[0])
+        b49.solve(b49.rx_seed)
         self.send_blocks([b49], success=False, reject_reason='bad-txnmrklroot', reconnect=True)
 
         self.log.info("Reject a block with incorrect POW limit")
         self.move_tip(44)
         b50 = self.next_block(50)
         b50.nBits = b50.nBits - 1
-        b50.solve()
+        b50.rx_seed = regtest_randomx_seed_for_height(self.block_heights[b44.sha256] + 1, self.nodes[0])
+        b50.solve(b50.rx_seed)
         self.send_blocks([b50], False, force_send=True, reject_reason='bad-diffbits', reconnect=True)
 
         self.log.info("Reject a block with two coinbase transactions")
@@ -690,7 +700,8 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block with timestamp before MedianTimePast")
         b54 = self.next_block(54, spend=out[15])
         b54.nTime = b35.nTime - 1
-        b54.solve()
+        b54.rx_seed = regtest_randomx_seed_for_height(self.block_heights[b44.sha256] + 1, self.nodes[0])
+        b54.solve(b54.rx_seed)
         self.send_blocks([b54], False, force_send=True, reject_reason='time-too-old', reconnect=True)
 
         # valid timestamp
@@ -1316,7 +1327,7 @@ class FullBlockTest(BitcoinTestFramework):
         b_cb34.vtx[0].vin[0].scriptSig = b_cb34.vtx[0].vin[0].scriptSig[:-1]
         b_cb34.vtx[0].rehash()
         b_cb34.hashMerkleRoot = b_cb34.calc_merkle_root()
-        b_cb34.solve()
+        b_cb34.solve(b_cb34.rx_seed)
         self.send_blocks([b_cb34], success=False, reject_reason='bad-cb-height', reconnect=True)
 
     # Helper methods
@@ -1360,20 +1371,25 @@ class FullBlockTest(BitcoinTestFramework):
             block_time = self.tip.nTime + 1
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
+        # Compute the RandomX seed for this height. Locally-built blocks haven't
+        # been submitted to the node yet, so for high heights we'd need to track
+        # in-memory blocks — feature_block stays well below epoch 1, so passing
+        # the node alone is sufficient.
+        rx_seed = regtest_randomx_seed_for_height(height, self.nodes[0])
         coinbase = create_coinbase(height, self.coinbase_pubkey)
         coinbase.vout[0].nValue += additional_coinbase_value
         coinbase.rehash()
         if spend is None:
-            block = create_block(base_block_hash, coinbase, block_time, version=version)
+            block = create_block(base_block_hash, coinbase, block_time, version=version, rx_seed=rx_seed)
         else:
             coinbase.vout[0].nValue += spend.vout[0].nValue - 1  # all but one satoshi to fees
             coinbase.rehash()
             tx = self.create_tx(spend, 0, 1, output_script=script)  # spend 1 satoshi
             self.sign_tx(tx, spend)
             tx.rehash()
-            block = create_block(base_block_hash, coinbase, block_time, version=version, txlist=[tx])
+            block = create_block(base_block_hash, coinbase, block_time, version=version, txlist=[tx], rx_seed=rx_seed)
         # Block is created. Find a valid nonce.
-        block.solve()
+        block.solve(rx_seed)
         self.tip = block
         self.block_heights[block.sha256] = height
         assert number not in self.blocks
@@ -1400,7 +1416,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.add_transactions_to_block(block, new_transactions)
         old_sha256 = block.sha256
         block.hashMerkleRoot = block.calc_merkle_root()
-        block.solve()
+        block.solve(block.rx_seed)
         # Update the internal state just like in next_block
         self.tip = block
         if block.sha256 != old_sha256:

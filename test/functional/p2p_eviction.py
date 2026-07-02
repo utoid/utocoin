@@ -65,8 +65,9 @@ class P2PEvict(BitcoinTestFramework):
             best_block = node.getbestblockhash()
             tip = int(best_block, 16)
             best_block_time = node.getblock(best_block)['time']
-            block = create_block(tip, create_coinbase(node.getblockcount() + 1), best_block_time + 1)
-            block.solve()
+            rx_seed = node.getblockheader(best_block).get("rx_seed") or best_block
+            block = create_block(tip, create_coinbase(node.getblockcount() + 1), best_block_time + 1, rx_seed=rx_seed)
+            block.solve(rx_seed)
             block_peer.send_blocks_and_test([block], node, success=True)
             protected_peers.add(current_peer)
 

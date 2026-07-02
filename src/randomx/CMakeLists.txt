@@ -222,6 +222,23 @@ set_property(TARGET randomx PROPERTY CXX_STANDARD 11)
 set_property(TARGET randomx PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET randomx PROPERTY PUBLIC_HEADER src/randomx.h)
 
+# Shared variant for Python ctypes binding used by the functional test framework.
+add_library(randomx_shared SHARED ${randomx_sources})
+if(TARGET generate-asm)
+  add_dependencies(randomx_shared generate-asm)
+endif()
+set_property(TARGET randomx_shared PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET randomx_shared PROPERTY CXX_STANDARD 11)
+set_property(TARGET randomx_shared PROPERTY CXX_STANDARD_REQUIRED ON)
+set_property(TARGET randomx_shared PROPERTY OUTPUT_NAME randomx)
+# Tell randomx.h to mark the public C API with dllexport / visibility(default)
+# so the shared library is usable cross-toolchain (MSVC/mingw/clang/gcc).
+target_compile_definitions(randomx_shared PRIVATE RANDOMX_BUILDING_SHARED)
+# The parent uses `add_subdirectory(randomx EXCLUDE_FROM_ALL)`, which excludes
+# every target here from the default ALL build. Override that for the shared
+# library so plain `cmake --build .` produces librandomx.{so,dylib,dll}.
+set_property(TARGET randomx_shared PROPERTY EXCLUDE_FROM_ALL FALSE)
+
 include(GNUInstallDirs)
 install(TARGETS randomx
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

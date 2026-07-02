@@ -27,10 +27,15 @@ class SignMessagesWithPrivTest(BitcoinTestFramework):
 
     def run_test(self):
         message = 'This is just a test message'
-
         self.log.info('test signing with priv_key')
+
         priv_key = 'cUeKHd5orzT3mz8P9pxyREHfsWtVfgsfDjiZZBcjUBAaGk1BTj7N'
-        expected_signature = 'INbVnW4e6PeRmsv2Qgu8NuopvrVjkcxob+sX8OcZG0SALhWybUjzMLPdAsXI46YZGb0KQTRii+wWIQzRpG/U+S0='
+        # Captured against utocoin's MESSAGE_MAGIC "Utocoin Signed Message:\n"
+        # (see src/common/signmessage.cpp). The upstream Bitcoin Core hardcoded
+        # signature was computed against "Bitcoin Signed Message:\n" so it
+        # does not match here.
+        expected_signature = "H1WRrV8GsbFGXSlDwblMsR3/tYg4O4uP3GbLPN5n+y7gNCnkLpB5im3Ne5iKg7lSgYIzdwpUqBT66d3yoMRz+24="
+
         signature = self.nodes[0].signmessagewithprivkey(priv_key, message)
         assert_equal(expected_signature, signature)
 

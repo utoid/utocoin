@@ -187,7 +187,9 @@ class P2POutEvict(BitcoinTestFramework):
 
         self.log.info("Mine a new block and keep the unprotected honest peer on sync, all the rest off-sync")
         # Mine a block so all peers become outdated
-        target_hash = prev_header.rehash()
+        prev_block_info = node.getblockheader(f"{tip_header.hashPrevBlock:064x}")
+        rx_seed = prev_block_info.get("rx_seed")
+        target_hash = prev_header.rehash(rx_seed)
         tip_hash = self.generateblock(node, output="raw(42)", transactions=[])["hash"]
         tip_header = from_hex(CBlockHeader(), node.getblockheader(tip_hash, False))
         tip_headers_message = msg_headers([tip_header])

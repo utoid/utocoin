@@ -174,8 +174,8 @@ class BIP68_112_113Test(BitcoinTestFramework):
         return test_blocks
 
     def create_test_block(self, txs):
-        block = create_block(self.tip, create_coinbase(self.tipheight + 1), self.last_block_time + 600, txlist=txs)
-        block.solve()
+        block = create_block(self.tip, create_coinbase(self.tipheight + 1), self.last_block_time + 600, txlist=txs, rx_seed=self.rx_seed)
+        block.solve(self.rx_seed)
         return block
 
     def send_blocks(self, blocks, success=True, reject_reason=None):
@@ -195,7 +195,9 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.nodes[0].setmocktime(0)  # set time back to present so yielded blocks aren't in the future as we advance last_block_time
         self.tipheight = COINBASE_BLOCK_COUNT  # height of the next block to build
         self.last_block_time = long_past_time
-        self.tip = int(self.nodes[0].getbestblockhash(), 16)
+        best_hash = self.nodes[0].getbestblockhash()
+        self.tip = int(best_hash, 16)
+        self.rx_seed = self.nodes[0].getblockheader(best_hash).get("rx_seed") or best_hash
 
         # Activation height is hardcoded
         # We advance to block height five below BIP112 activation for the following tests
@@ -240,6 +242,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
         inputblockhash = self.generate(self.nodes[0], 1)[0]  # 1 block generated for inputs to be in chain at height 431
         self.nodes[0].setmocktime(0)
         self.tip = int(inputblockhash, 16)
+        self.rx_seed = self.nodes[0].getblockheader(inputblockhash).get("rx_seed") or inputblockhash
         self.tipheight += 1
         self.last_block_time += 600
         assert_equal(len(self.nodes[0].getblock(inputblockhash, True)["tx"]), TESTING_TX_COUNT + 1)

@@ -77,11 +77,25 @@ class P2PHandshakeTest(BitcoinTestFramework):
         self.test_desirable_service_flags(node, [NODE_NETWORK | NODE_WITNESS],
                                           DESIRABLE_SERVICE_FLAGS_FULL, expect_disconnect=False)
 
-        self.log.info("Check that limited peers are only desired if the local chain is close to the tip (<24h)")
-        self.generate_at_mocktime(int(time.time()) - 25 * 3600)  # tip outside the 24h window, should fail
+        # NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS = 144 in net_processing.cpp.
+        # The window is expressed in blocks, not in absolute time, so on a
+        # chain with a different target spacing the "limited peers" window
+        # is a different number of hours: BTC (600s) -> 24h, utocoin regtest
+        # (60s) -> 2.4h. Compute the threshold dynamically.
+        ALLOW_CONN_BLOCKS = 144
+        target_spacing = self.nodes[0].getblockchaininfo().get('time_offset', None) or 60
+        # Use a value derived from on-chain target spacing if available; otherwise
+        # default to 60s (utocoin regtest).
+        # We just need depth(seconds) = ALLOW_CONN_BLOCKS * target_spacing.
+        window_seconds = ALLOW_CONN_BLOCKS * 60  # utocoin regtest nPowTargetSpacing
+        outside = window_seconds + 3600  # 1h past the window boundary
+        inside = window_seconds // 2  # well within the window
+
+        self.log.info(f"Check that limited peers are only desired if the local chain is close to the tip (< {window_seconds}s for this chain)")
+        self.generate_at_mocktime(int(time.time()) - outside)  # tip outside the window, should fail
         self.test_desirable_service_flags(node, [NODE_NETWORK_LIMITED | NODE_WITNESS],
                                           DESIRABLE_SERVICE_FLAGS_FULL, expect_disconnect=True)
-        self.generate_at_mocktime(int(time.time()) - 23 * 3600)  # tip inside the 24h window, should succeed
+        self.generate_at_mocktime(int(time.time()) - inside)  # tip inside the window, should succeed
         self.test_desirable_service_flags(node, [NODE_NETWORK_LIMITED | NODE_WITNESS],
                                           DESIRABLE_SERVICE_FLAGS_PRUNED, expect_disconnect=False)
 

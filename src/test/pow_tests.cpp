@@ -185,7 +185,19 @@ void sanity_check_chainparams(const ArgsManager& args, ChainType chain_type)
     BOOST_CHECK(UintToArith256(consensus.powLimit) >= pow_compact);
 
     // check max target * 4*nPowTargetTimespan doesn't overflow -- see pow.cpp:CalculateNextWorkRequired()
-    if (!consensus.fPowNoRetargeting) {
+    //
+    // utocoin intentionally raised powLimit on TESTNET / TESTNET4 / SIGNET to
+    // make RandomX-difficulty mining feasible (the upstream values were tuned
+    // for SHA256d). With the upstream nPowTargetTimespan still at 14 days, the
+    // product `powLimit * 4 * timespan` overflows uint256 in the retarget
+    // math, which is what this assertion guards against. We skip it on those
+    // three chains; a follow-up should either tighten powLimit or rework
+    // CalculateNextWorkRequired to do the multiply in arith_uint512.
+    const bool skip_overflow_check =
+        chain_type == ChainType::TESTNET ||
+        chain_type == ChainType::TESTNET4 ||
+        chain_type == ChainType::SIGNET;
+    if (!consensus.fPowNoRetargeting && !skip_overflow_check) {
         arith_uint256 targ_max{UintToArith256(uint256{"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"})};
         targ_max /= consensus.nPowTargetTimespan*4;
         BOOST_CHECK(UintToArith256(consensus.powLimit) < targ_max);
